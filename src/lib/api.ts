@@ -89,6 +89,22 @@ class ApiClient {
   }
 
   // --- AUTH APIs ---
+  public async registerAdmin(payload: {
+    companyName: string;
+    loginId: string;
+    password: string;
+    confirmPassword: string;
+    phone?: string;
+    email?: string;
+  }): Promise<AuthResponse> {
+    const data = await this.request<AuthResponse>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    this.setAuth(data.token, data.user);
+    return data;
+  }
+
   public async login(loginId: string, password: string): Promise<AuthResponse> {
     const data = await this.request<AuthResponse>('/api/auth/login', {
       method: 'POST',
@@ -135,13 +151,22 @@ class ApiClient {
 
   public async createTelecaller(payload: {
     name: string;
-    loginId: string;
-    password: string;
+    loginId?: string;
+    password?: string;
     brandAccess: BrandAccess;
     phone?: string;
     email?: string;
     dailyTarget?: number;
-  }): Promise<{ message: string; telecaller: AuthUser }> {
+  }): Promise<{
+    message: string;
+    telecaller: AuthUser;
+    credentials?: {
+      name: string;
+      loginId: string;
+      temporaryPassword: string;
+      brandAccess: BrandAccess;
+    };
+  }> {
     return this.request('/api/admin/telecallers', {
       method: 'POST',
       body: JSON.stringify(payload),
@@ -169,6 +194,20 @@ class ApiClient {
   public async deleteTelecaller(id: string): Promise<{ message: string; result: any }> {
     return this.request(`/api/admin/telecallers/${id}`, {
       method: 'DELETE',
+    });
+  }
+
+  public async resetTelecallerPassword(id: string): Promise<{
+    message: string;
+    user: AuthUser;
+    temporaryPassword: string;
+  }> {
+    return this.request<{
+      message: string;
+      user: AuthUser;
+      temporaryPassword: string;
+    }>(`/api/admin/telecallers/${id}/reset-password`, {
+      method: 'POST',
     });
   }
 

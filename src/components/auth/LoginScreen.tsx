@@ -73,6 +73,9 @@ const DEFAULT_DEMO_ACCOUNTS: DemoAccountItem[] = [
 ];
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
+  const [authMode, setAuthMode] = useState<'SIGN_IN' | 'REGISTER_ADMIN'>('SIGN_IN');
+
+  // Sign In States
   const [roleTab, setRoleTab] = useState<'ADMIN' | 'TELECALLER'>('TELECALLER');
   const [loginId, setLoginId] = useState<string>('TC_VIDYA_1');
   const [password, setPassword] = useState<string>('password123');
@@ -80,6 +83,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [demoAccounts, setDemoAccounts] = useState<DemoAccountItem[]>(DEFAULT_DEMO_ACCOUNTS);
+
+  // Admin Registration States
+  const [regCompanyName, setRegCompanyName] = useState<string>('');
+  const [regLoginId, setRegLoginId] = useState<string>('');
+  const [regPassword, setRegPassword] = useState<string>('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState<string>('');
+  const [regPhone, setRegPhone] = useState<string>('');
+  const [regEmail, setRegEmail] = useState<string>('');
+  const [regShowPassword, setRegShowPassword] = useState<boolean>(false);
+  const [regShowConfirmPassword, setRegShowConfirmPassword] = useState<boolean>(false);
+  const [regIsLoading, setRegIsLoading] = useState<boolean>(false);
+  const [regError, setRegError] = useState<string | null>(null);
 
   // Fetch real demo accounts from server on mount
   useEffect(() => {
@@ -165,12 +180,79 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     }
   };
 
+  const handleRegisterAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = regCompanyName.trim();
+    const id = regLoginId.trim().toUpperCase();
+    const pass = regPassword.trim();
+    const confirm = regConfirmPassword.trim();
+
+    if (!name) {
+      setRegError('Please enter your Company or Admin Name.');
+      soundManager.playError();
+      return;
+    }
+
+    if (!id || id.length < 3) {
+      setRegError('Admin Login ID must be at least 3 characters long.');
+      soundManager.playError();
+      return;
+    }
+
+    if (!/^[A-Z0-9_-]+$/.test(id)) {
+      setRegError('Login ID can only contain letters, numbers, hyphens, and underscores.');
+      soundManager.playError();
+      return;
+    }
+
+    if (!pass || pass.length < 8) {
+      setRegError('Password must be at least 8 characters long.');
+      soundManager.playError();
+      return;
+    }
+
+    if (pass !== confirm) {
+      setRegError('Passwords do not match. Please verify.');
+      soundManager.playError();
+      return;
+    }
+
+    setRegIsLoading(true);
+    setRegError(null);
+
+    try {
+      const res = await api.registerAdmin({
+        companyName: name,
+        loginId: id,
+        password: pass,
+        confirmPassword: confirm,
+        phone: regPhone.trim() || undefined,
+        email: regEmail.trim() || undefined,
+      });
+
+      soundManager.playSuccess();
+      onLoginSuccess(res.user);
+    } catch (err: any) {
+      setRegError(err.message || 'Unable to register company account. Please try again.');
+      soundManager.playError();
+    } finally {
+      setRegIsLoading(false);
+    }
+  };
+
   const handleQuickSelect = (acc: DemoAccountItem) => {
     soundManager.playTap();
     setRoleTab(acc.role);
     setLoginId(acc.loginId);
     setPassword(acc.password);
     setError(null);
+  };
+
+  const switchMode = (mode: 'SIGN_IN' | 'REGISTER_ADMIN') => {
+    soundManager.playTap();
+    setAuthMode(mode);
+    setError(null);
+    setRegError(null);
   };
 
   return (
@@ -270,183 +352,399 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             <p className="text-xs text-slate-400 mt-0.5">Enterprise Dual-Brand CRM</p>
           </div>
 
-          {/* Login Card */}
-          <div className="bg-slate-900/90 rounded-3xl border border-slate-800 shadow-2xl p-6 sm:p-8">
-            <div className="mb-6">
-              <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Welcome back</h2>
-              <p className="text-xs sm:text-sm text-slate-400 mt-1">Sign in to your account to start your calling queue</p>
-            </div>
-
-            {/* Role Tab Selector */}
-            <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-950 rounded-2xl border border-slate-800 mb-6">
-              <button
-                type="button"
-                id="tab-role-telecaller"
-                onClick={() => {
-                  soundManager.playTap();
-                  setRoleTab('TELECALLER');
-                  setLoginId('TC_VIDYA_1');
-                  setPassword('password123');
-                  setError(null);
-                }}
-                className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer min-h-[42px] ${
-                  roleTab === 'TELECALLER'
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <PhoneCall className="w-3.5 h-3.5 shrink-0" />
-                <span>Telecaller</span>
-              </button>
-
-              <button
-                type="button"
-                id="tab-role-admin"
-                onClick={() => {
-                  soundManager.playTap();
-                  setRoleTab('ADMIN');
-                  setLoginId('admin');
-                  setPassword('admin123');
-                  setError(null);
-                }}
-                className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer min-h-[42px] ${
-                  roleTab === 'ADMIN'
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <Shield className="w-3.5 h-3.5 shrink-0" />
-                <span>Admin HQ</span>
-              </button>
-            </div>
-
-            {/* Error Alert */}
-            {error && (
-              <div className="mb-5 p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2.5">
-                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
-
-            {/* Form */}
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1.5">
-                  {roleTab === 'ADMIN' ? 'Admin Login ID' : 'Telecaller Login ID'}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                    <User className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="text"
-                    id="input-login-id"
-                    value={loginId}
-                    onChange={(e) => setLoginId(e.target.value)}
-                    placeholder={roleTab === 'ADMIN' ? 'admin' : 'TC_VIDYA_1, TC_ESTATE_1...'}
-                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all min-h-[46px]"
-                    required
-                  />
+          {/* Auth Card */}
+          <div className="bg-slate-900/90 rounded-3xl border border-slate-800 shadow-2xl p-6 sm:p-8 backdrop-blur-xl">
+            {authMode === 'SIGN_IN' ? (
+              <>
+                <div className="mb-6">
+                  <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Welcome back</h2>
+                  <p className="text-xs sm:text-sm text-slate-400 mt-1">Sign in to your account to start your calling queue</p>
                 </div>
-              </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1.5">Password</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                    <Lock className="w-4 h-4" />
-                  </div>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    id="input-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter your password"
-                    className="w-full pl-10 pr-11 py-3 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all min-h-[46px]"
-                    required
-                  />
+                {/* Role Tab Selector (Telecaller vs Admin) */}
+                <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-950 rounded-2xl border border-slate-800 mb-6">
                   <button
                     type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 cursor-pointer"
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    id="tab-role-telecaller"
+                    onClick={() => {
+                      soundManager.playTap();
+                      setRoleTab('TELECALLER');
+                      setLoginId('TC_VIDYA_1');
+                      setPassword('password123');
+                      setError(null);
+                    }}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer min-h-[42px] ${
+                      roleTab === 'TELECALLER'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
                   >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    <PhoneCall className="w-3.5 h-3.5 shrink-0" />
+                    <span>Telecaller</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    id="tab-role-admin"
+                    onClick={() => {
+                      soundManager.playTap();
+                      setRoleTab('ADMIN');
+                      setLoginId('admin');
+                      setPassword('admin123');
+                      setError(null);
+                    }}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer min-h-[42px] ${
+                      roleTab === 'ADMIN'
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Shield className="w-3.5 h-3.5 shrink-0" />
+                    <span>Admin HQ</span>
                   </button>
                 </div>
-              </div>
 
-              <button
-                type="submit"
-                id="btn-login-submit"
-                disabled={isLoading}
-                className={`w-full py-3.5 px-4 rounded-xl text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg active:scale-98 transition-all cursor-pointer min-h-[48px] ${
-                  roleTab === 'ADMIN'
-                    ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'
-                    : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/30'
-                } disabled:opacity-60`}
-              >
-                {isLoading ? (
-                  <span>Signing in...</span>
-                ) : (
-                  <>
-                    <span>Sign In to {roleTab === 'ADMIN' ? 'Admin Portal' : 'Calling Portal'}</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
+                {/* Error Alert Banner */}
+                {error && (
+                  <div
+                    id="alert-login-error"
+                    className="mb-5 p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2.5"
+                  >
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>{error}</span>
+                  </div>
                 )}
-              </button>
-            </form>
 
-            {/* Quick Demo Credentials */}
-            <div className="mt-6 pt-5 border-t border-slate-800">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span>One-Tap Demo Accounts</span>
-                </span>
-              </div>
+                {/* Sign In Form */}
+                <form onSubmit={handleLogin} className="space-y-4">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-300 block mb-1.5">
+                      {roleTab === 'ADMIN' ? 'Admin Login ID' : 'Telecaller Login ID'}
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                        <User className="w-4 h-4" />
+                      </div>
+                      <input
+                        type="text"
+                        id="input-login-id"
+                        value={loginId}
+                        onChange={(e) => setLoginId(e.target.value)}
+                        placeholder={roleTab === 'ADMIN' ? 'admin' : 'TC_VIDYA_1, TC_ESTATE_1...'}
+                        className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all min-h-[46px]"
+                        required
+                      />
+                    </div>
+                  </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                {demoAccounts.slice(0, 4).map((acc) => {
-                  const isSelected = loginId.toLowerCase() === acc.loginId.toLowerCase();
-                  return (
-                    <button
-                      key={acc.loginId}
-                      type="button"
-                      onClick={() => handleQuickSelect(acc)}
-                      className={`p-2.5 rounded-xl border text-left transition-all group cursor-pointer ${
-                        isSelected
-                          ? 'bg-slate-800 border-blue-500/80 shadow-xs'
-                          : 'bg-slate-950/80 hover:bg-slate-950 border-slate-800'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span
-                          className={`text-xs font-bold flex items-center gap-1 truncate ${
-                            acc.icon === 'admin'
-                              ? 'text-indigo-400 group-hover:text-indigo-300'
-                              : acc.icon === 'estate'
-                              ? 'text-emerald-400 group-hover:text-emerald-300'
-                              : acc.icon === 'dual'
-                              ? 'text-purple-400 group-hover:text-purple-300'
-                              : 'text-blue-400 group-hover:text-blue-300'
+                  <div>
+                    <label className="text-xs font-semibold text-slate-300 block mb-1.5">Password</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        id="input-password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Enter your password"
+                        className="w-full pl-10 pr-11 py-3 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all min-h-[46px]"
+                        required
+                      />
+                      <button
+                        type="button"
+                        id="btn-toggle-password"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 cursor-pointer"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    id="btn-login-submit"
+                    disabled={isLoading}
+                    className={`w-full py-3.5 px-4 rounded-xl text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg active:scale-98 transition-all cursor-pointer min-h-[48px] ${
+                      roleTab === 'ADMIN'
+                        ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'
+                        : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/30'
+                    } disabled:opacity-60`}
+                  >
+                    {isLoading ? (
+                      <span>Signing in...</span>
+                    ) : (
+                      <>
+                        <span>Sign In to {roleTab === 'ADMIN' ? 'Admin Portal' : 'Calling Portal'}</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+                </form>
+
+                {/* Company Account Creation Link */}
+                <div className="mt-5 pt-4 border-t border-slate-800 text-center">
+                  <span className="text-xs text-slate-400 block mb-1">Don't have a company account?</span>
+                  <button
+                    type="button"
+                    id="btn-switch-to-register-admin"
+                    onClick={() => switchMode('REGISTER_ADMIN')}
+                    className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                  >
+                    <Shield className="w-3.5 h-3.5" />
+                    <span>Create Company Admin Account</span>
+                  </button>
+                </div>
+
+                {/* Quick Demo Credentials */}
+                <div className="mt-6 pt-5 border-t border-slate-800">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>One-Tap Demo Accounts</span>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    {demoAccounts.slice(0, 4).map((acc) => {
+                      const isSelected = loginId.toLowerCase() === acc.loginId.toLowerCase();
+                      return (
+                        <button
+                          key={acc.loginId}
+                          type="button"
+                          onClick={() => handleQuickSelect(acc)}
+                          className={`p-2.5 rounded-xl border text-left transition-all group cursor-pointer ${
+                            isSelected
+                              ? 'bg-slate-800 border-blue-500/80 shadow-xs'
+                              : 'bg-slate-950/80 hover:bg-slate-950 border-slate-800'
                           }`}
                         >
-                          {acc.icon === 'admin' && <Shield className="w-3 h-3 shrink-0" />}
-                          {acc.icon === 'vidya' && <GraduationCap className="w-3 h-3 shrink-0" />}
-                          {acc.icon === 'estate' && <Building2 className="w-3 h-3 shrink-0" />}
-                          {acc.icon === 'dual' && <PhoneCall className="w-3 h-3 shrink-0" />}
-                          <span className="truncate">{acc.name}</span>
-                        </span>
+                          <div className="flex items-center justify-between">
+                            <span
+                              className={`text-xs font-bold flex items-center gap-1 truncate ${
+                                acc.icon === 'admin'
+                                  ? 'text-indigo-400 group-hover:text-indigo-300'
+                                  : acc.icon === 'estate'
+                                  ? 'text-emerald-400 group-hover:text-emerald-300'
+                                  : acc.icon === 'dual'
+                                  ? 'text-purple-400 group-hover:text-purple-300'
+                                  : 'text-blue-400 group-hover:text-blue-300'
+                              }`}
+                            >
+                              {acc.icon === 'admin' && <Shield className="w-3 h-3 shrink-0" />}
+                              {acc.icon === 'vidya' && <GraduationCap className="w-3 h-3 shrink-0" />}
+                              {acc.icon === 'estate' && <Building2 className="w-3 h-3 shrink-0" />}
+                              {acc.icon === 'dual' && <PhoneCall className="w-3 h-3 shrink-0" />}
+                              <span className="truncate">{acc.name}</span>
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-slate-400 block mt-0.5 font-mono truncate">
+                            {acc.loginId} / {acc.password}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* ========================================================================= */
+              /* AUTH MODE: CREATE COMPANY ADMIN ACCOUNT */
+              /* ========================================================================= */
+              <>
+                <div className="mb-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                      <Shield className="w-3 h-3" /> Master Company Admin
+                    </span>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+                    Create Company Account
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-400 mt-1">
+                    Set up your organization to manage telecalling operations
+                  </p>
+                </div>
+
+                {/* Error Alert Banner */}
+                {regError && (
+                  <div
+                    id="alert-admin-reg-error"
+                    className="mb-5 p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2.5"
+                  >
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>{regError}</span>
+                  </div>
+                )}
+
+                {/* Admin Registration Form */}
+                <form onSubmit={handleRegisterAdmin} className="space-y-4">
+                  {/* Company / Admin Name */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-300 block mb-1.5">
+                      Company / Admin Name *
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                        <Building2 className="w-4 h-4" />
                       </div>
-                      <span className="text-[11px] text-slate-400 block mt-0.5 font-mono truncate">
-                        {acc.loginId} / {acc.password}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+                      <input
+                        type="text"
+                        id="input-admin-reg-company"
+                        value={regCompanyName}
+                        onChange={(e) => setRegCompanyName(e.target.value)}
+                        placeholder="e.g. Apex Global Corp"
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[44px]"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Admin Login ID */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-300 block mb-1.5">
+                      Desired Admin Login ID * <span className="text-slate-500 font-normal">(letters, numbers, _)</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 font-mono text-xs">
+                        #
+                      </div>
+                      <input
+                        type="text"
+                        id="input-admin-reg-loginid"
+                        value={regLoginId}
+                        onChange={(e) => setRegLoginId(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))}
+                        placeholder="e.g. APEX_ADMIN"
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[44px]"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Password */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-300 block mb-1.5">
+                      Password * <span className="text-slate-500 font-normal">(min. 8 characters)</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <input
+                        type={regShowPassword ? 'text' : 'password'}
+                        id="input-admin-reg-password"
+                        value={regPassword}
+                        onChange={(e) => setRegPassword(e.target.value)}
+                        placeholder="Create strong admin password"
+                        className="w-full pl-10 pr-11 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[44px]"
+                        required
+                        minLength={8}
+                      />
+                      <button
+                        type="button"
+                        id="btn-toggle-reg-password"
+                        onClick={() => setRegShowPassword(!regShowPassword)}
+                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 cursor-pointer"
+                        aria-label={regShowPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {regShowPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Confirm Password */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-300 block mb-1.5">
+                      Confirm Password *
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <input
+                        type={regShowConfirmPassword ? 'text' : 'password'}
+                        id="input-admin-reg-confirm-password"
+                        value={regConfirmPassword}
+                        onChange={(e) => setRegConfirmPassword(e.target.value)}
+                        placeholder="Re-enter admin password"
+                        className="w-full pl-10 pr-11 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[44px]"
+                        required
+                        minLength={8}
+                      />
+                      <button
+                        type="button"
+                        id="btn-toggle-reg-confirm-password"
+                        onClick={() => setRegShowConfirmPassword(!regShowConfirmPassword)}
+                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 cursor-pointer"
+                        aria-label={regShowConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                      >
+                        {regShowConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Optional Contact Fields */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">
+                        Phone <span className="text-slate-500 font-normal">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={regPhone}
+                        onChange={(e) => setRegPhone(e.target.value)}
+                        placeholder="+91 98765 43210"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[38px]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">
+                        Email <span className="text-slate-500 font-normal">(optional)</span>
+                      </label>
+                      <input
+                        type="email"
+                        value={regEmail}
+                        onChange={(e) => setRegEmail(e.target.value)}
+                        placeholder="admin@company.com"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[38px]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Submit Button */}
+                  <button
+                    type="submit"
+                    id="btn-admin-reg-submit"
+                    disabled={regIsLoading}
+                    className="w-full py-3.5 px-4 rounded-xl text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 shadow-lg shadow-indigo-600/30 active:scale-98 transition-all cursor-pointer min-h-[48px] disabled:opacity-60"
+                  >
+                    {regIsLoading ? (
+                      <span>Creating Company Account...</span>
+                    ) : (
+                      <>
+                        <span>Register Company & Enter CRM</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+                </form>
+
+                {/* Back to Sign In */}
+                <div className="mt-5 pt-4 border-t border-slate-800 text-center">
+                  <button
+                    type="button"
+                    id="btn-switch-to-signin"
+                    onClick={() => switchMode('SIGN_IN')}
+                    className="text-xs text-slate-400 hover:text-white font-semibold transition-colors cursor-pointer"
+                  >
+                    Already have an account? <span className="text-indigo-400 underline">Sign In instead</span>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
           <p className="text-center text-xs text-slate-500">

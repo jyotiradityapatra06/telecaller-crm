@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
-import { getSupabaseClient } from '../supabase';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabase';
+import { devFallbackRepository } from './devFallbackRepository';
 import {
   User,
   Lead,
@@ -27,7 +28,14 @@ import {
 export class DbRepository {
   private defaultOrgId = 'org_demo_001';
 
+  private get useFallback(): boolean {
+    return !isSupabaseConfigured() && process.env.NODE_ENV !== 'production';
+  }
+
   public getOrganizationId(user?: User): string {
+    if (this.useFallback) {
+      return devFallbackRepository!.getOrganizationId(user);
+    }
     if (user) {
       const userOrg = (user as any).organizationId || (user as any).organization_id;
       if (userOrg) return userOrg;
@@ -39,13 +47,15 @@ export class DbRepository {
   private get client() {
     const supabase = getSupabaseClient();
     if (!supabase) {
-      throw new Error('Supabase client is not configured or unavailable.');
+      throw new Error('Supabase client is not configured or unavailable in production.');
     }
     return supabase;
   }
 
+
   // --- USER METHODS ---
   public async getAllUsers(user?: User): Promise<User[]> {
+    if (this.useFallback) return devFallbackRepository!.getAllUsers(user);
     const orgId = this.getOrganizationId(user);
     const { data, error } = await this.client
       .from('users')
@@ -57,6 +67,7 @@ export class DbRepository {
   }
 
   public async getTelecallers(brandFilter?: 'ALL' | BusinessBrand, user?: User): Promise<User[]> {
+    if (this.useFallback) return devFallbackRepository!.getTelecallers(brandFilter, user);
     const orgId = this.getOrganizationId(user);
     const { data, error } = await this.client
       .from('users')
@@ -76,88 +87,168 @@ export class DbRepository {
   }
 
   public async findUserById(id: string, userContext?: User): Promise<(User & { passwordHash: string }) | undefined> {
-    const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
-    const { data, error } = await this.client
-      .from('users')
-      .select('*')
-      .eq('organization_id', orgId)
-      .eq('id', id)
-      .single();
-
+    if (this.useFallback) return devFallbackRepository!.findUserById(id, userContext);
+    let query = this.client.from('users').select('*').eq('id', id);
+    if (userContext) {
+      const orgId = this.getOrganizationId(userContext);
+      query = query.eq('organization_id', orgId);
+    }
+    const { data, error } = await query.single();
     if (error || !data) return undefined;
     return mapUserFromRow(data);
   }
 
   public async findUserByLoginId(loginId: string): Promise<(User & { passwordHash: string }) | undefined> {
+    if (this.useFallback) return devFallbackRepository!.findUserByLoginId(loginId);
     if (!loginId) return undefined;
     const clean = loginId.trim().toLowerCase();
 
     const { data, error } = await this.client
       .from('users')
       .select('*')
-      .eq('organization_id', this.defaultOrgId);
+      .ilike('login_id', clean);
 
-    if (error || !data) return undefined;
-
-    const users = data.map(mapUserFromRow);
-
-    const directUser = users.find((u) => u.loginId.toLowerCase() === clean);
-    if (directUser) return directUser;
-
-    const idUser = users.find((u) => u.id.toLowerCase() === clean);
-    if (idUser) return idUser;
-
-    const aliasMap: Record<string, string> = {
-      tc001: 'tc_vidya_1',
-      tc1: 'tc_vidya_1',
-      tc_vidya_1: 'tc_vidya_1',
-      tcvidya1: 'tc_vidya_1',
-      tc002: 'tc_estate_1',
-      tc2: 'tc_estate_1',
-      tc_estate_1: 'tc_estate_1',
-      tcestate1: 'tc_estate_1',
-      tc003: 'tc_dual_1',
-      tc3: 'tc_dual_1',
-      tc_dual_1: 'tc_dual_1',
-      tcdual1: 'tc_dual_1',
-    };
-
-    const targetLoginId = aliasMap[clean];
-    if (targetLoginId) {
-      return users.find((u) => u.loginId.toLowerCase() === targetLoginId);
-    }
-
-    return undefined;
+    if (error || !data || data.length === 0) return undefined;
+    return mapUserFromRow(data[0]);
   }
 
-  public async createTelecaller(data: {
-    name: string;
+  public async registerAdmin(data: {
+    companyName: string;
     loginId: string;
-    password: string;
-    brandAccess: BrandAccess;
+    passwordHash: string;
     phone?: string;
     email?: string;
-    dailyTarget?: number;
-  }, adminUser?: User): Promise<User> {
-    const orgId = this.getOrganizationId(adminUser);
-    const existing = await this.findUserByLoginId(data.loginId);
+  }): Promise<User> {
+    if (this.useFallback) return devFallbackRepository!.registerAdmin(data);
+
+    const cleanId = data.loginId.trim().toUpperCase();
+    const existing = await this.findUserByLoginId(cleanId);
     if (existing) {
-      throw new Error(`Telecaller ID "${data.loginId}" already exists. Please choose a unique ID.`);
+      throw new Error('Login ID already exists. Please choose another.');
     }
 
+    const now = new Date().toISOString();
+    const orgId = `org_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+    const orgSlug = data.companyName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `org-${Date.now()}`;
+
+    // 1. Create Organization in organizations table
+    const { error: orgError } = await this.client.from('organizations').insert({
+      id: orgId,
+      name: data.companyName.trim(),
+      slug: orgSlug,
+      is_demo: false,
+      is_active: true,
+      created_at: now,
+      updated_at: now,
+    });
+    if (orgError) {
+      throw new Error(`Failed to create organization: ${orgError.message}`);
+    }
+
+    // 2. Create Master Admin in users table
+    const newAdmin: User & { passwordHash: string } = {
+      id: `usr_adm_${Date.now().toString().slice(-6)}_${Math.random().toString(36).substring(2, 5)}`,
+      organizationId: orgId,
+      name: data.companyName.trim(),
+      loginId: cleanId,
+      role: 'ADMIN',
+      brandAccess: 'BOTH',
+      dailyTarget: 100,
+      phone: data.phone?.trim() || '+91 90000 00000',
+      email: data.email?.trim() || `${cleanId.toLowerCase()}@apnicrm.com`,
+      isActive: true,
+      passwordHash: data.passwordHash,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const row = mapUserToRow(newAdmin, orgId);
+    const { error } = await this.client.from('users').insert(row);
+    if (error) {
+      if (error.code === '23505' || error.message?.includes('unique') || error.message?.includes('duplicate')) {
+        throw new Error('Login ID already exists. Please choose another.');
+      }
+      throw new Error(`Failed to create company admin account: ${error.message}`);
+    }
+
+    const { passwordHash: _, ...safeUser } = newAdmin;
+    return safeUser;
+  }
+
+  private async generateNextLoginId(brandAccess: BrandAccess, adminUser?: User): Promise<string> {
+    const prefix =
+      brandAccess === 'APNI_VIDYA'
+        ? 'TC_VIDYA'
+        : brandAccess === 'APNI_ESTATE'
+        ? 'TC_ESTATE'
+        : 'TC_DUAL';
+
+    const users = await this.getAllUsers(adminUser);
+    let maxNum = 0;
+    const regex = new RegExp(`^${prefix}_(\\d+)$`, 'i');
+    for (const u of users) {
+      const m = u.loginId.match(regex);
+      if (m && m[1]) {
+        const n = parseInt(m[1], 10);
+        if (n > maxNum) maxNum = n;
+      }
+    }
+
+    const nextNum = maxNum + 1;
+    const formatted = nextNum < 10 ? `0${nextNum}` : `${nextNum}`;
+    return `${prefix}_${formatted}`;
+  }
+
+  private generateTemporaryPassword(): string {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 4; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const num = Math.floor(1000 + Math.random() * 9000);
+    return `Pass-${code}-${num}`;
+  }
+
+  public async createTelecaller(
+    data: {
+      name: string;
+      loginId?: string;
+      password?: string;
+      brandAccess: BrandAccess;
+      phone?: string;
+      email?: string;
+      dailyTarget?: number;
+    },
+    adminUser?: User
+  ): Promise<{ user: User; temporaryPassword?: string }> {
+    if (this.useFallback) return devFallbackRepository!.createTelecaller(data, adminUser);
+
+    const orgId = this.getOrganizationId(adminUser);
+    const brandAccess = data.brandAccess || 'APNI_VIDYA';
+
+    const finalLoginId = data.loginId?.trim()
+      ? data.loginId.trim().toUpperCase()
+      : await this.generateNextLoginId(brandAccess, adminUser);
+
+    const existing = await this.findUserByLoginId(finalLoginId);
+    if (existing) {
+      throw new Error(`Telecaller ID "${finalLoginId}" already exists. Please choose a unique ID.`);
+    }
+
+    const plainPassword = data.password?.trim() || this.generateTemporaryPassword();
     const salt = bcrypt.genSaltSync(10);
-    const passwordHash = bcrypt.hashSync(data.password.trim(), salt);
+    const passwordHash = bcrypt.hashSync(plainPassword, salt);
     const now = new Date().toISOString();
 
     const newUser: User & { passwordHash: string } = {
-      id: `usr_tc_${Date.now().toString().slice(-6)}`,
+      id: `usr_tc_${Date.now().toString().slice(-6)}_${Math.random().toString(36).substring(2, 5)}`,
       name: data.name.trim(),
-      loginId: data.loginId.trim().toUpperCase(),
+      loginId: finalLoginId,
       role: 'TELECALLER',
-      brandAccess: data.brandAccess || 'APNI_VIDYA',
+      brandAccess,
       dailyTarget: Number(data.dailyTarget) || 50,
       phone: data.phone?.trim() || '+91 90000 00000',
-      email: data.email?.trim() || `${data.loginId.toLowerCase()}@apnicrm.com`,
+      email: data.email?.trim() || `${finalLoginId.toLowerCase()}@apnicrm.com`,
       isActive: true,
       passwordHash,
       createdAt: now,
@@ -168,11 +259,17 @@ export class DbRepository {
     const { error } = await this.client.from('users').insert(row);
 
     if (error) {
+      if (error.code === '23505' || error.message?.includes('unique') || error.message?.includes('duplicate')) {
+        throw new Error(`Telecaller ID "${finalLoginId}" already exists. Please choose a unique ID.`);
+      }
       throw new Error(`Failed to create telecaller in database: ${error.message}`);
     }
 
     const { passwordHash: _, ...safeUser } = newUser;
-    return safeUser;
+    return {
+      user: safeUser,
+      temporaryPassword: plainPassword,
+    };
   }
 
   public async updateTelecaller(
@@ -188,6 +285,7 @@ export class DbRepository {
     }>,
     adminUser?: User
   ): Promise<User> {
+    if (this.useFallback) return devFallbackRepository!.updateTelecaller(id, updates, adminUser);
     const orgId = this.getOrganizationId(adminUser);
     const user = await this.findUserById(id, adminUser);
     if (!user) {
@@ -227,8 +325,76 @@ export class DbRepository {
     return safeUser;
   }
 
+  public async resetTelecallerPassword(
+    id: string,
+    adminUser?: User
+  ): Promise<{ user: User; temporaryPassword: string }> {
+    if (this.useFallback) return devFallbackRepository!.resetTelecallerPassword(id, adminUser);
+    const orgId = this.getOrganizationId(adminUser);
+
+    // Verify telecaller exists and belongs to this organization
+    const { data: user, error: fetchErr } = await this.client
+      .from('users')
+      .select('*')
+      .eq('organization_id', orgId)
+      .eq('id', id)
+      .single();
+
+    if (fetchErr || !user) {
+      throw new Error(`Telecaller not found with ID: ${id}`);
+    }
+
+    if (user.role !== 'TELECALLER') {
+      throw new Error('Forbidden: Cannot reset password for non-telecaller account.');
+    }
+
+    const plainPassword = this.generateTemporaryPassword();
+    const salt = bcrypt.genSaltSync(10);
+    const passwordHash = bcrypt.hashSync(plainPassword, salt);
+    const now = new Date().toISOString();
+
+    const { data: updated, error: updateErr } = await this.client
+      .from('users')
+      .update({
+        password_hash: passwordHash,
+        updated_at: now,
+      })
+      .eq('organization_id', orgId)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateErr || !updated) {
+      throw new Error(`Failed to reset password: ${updateErr?.message || 'Update failed'}`);
+    }
+
+    const safeUser = mapUserFromRow(updated);
+    const { passwordHash: _, ...sanitized } = safeUser;
+    return {
+      user: sanitized,
+      temporaryPassword: plainPassword,
+    };
+  }
+
+  public async updateUserPassword(userId: string, newHash: string, userContext?: User): Promise<void> {
+    if (this.useFallback) return devFallbackRepository!.updateUserPassword(userId, newHash, userContext);
+    const orgId = userContext ? this.getOrganizationId(userContext) : undefined;
+    let query = this.client
+      .from('users')
+      .update({ password_hash: newHash, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+    if (orgId) {
+      query = query.eq('organization_id', orgId);
+    }
+    const { error } = await query;
+    if (error) {
+      throw new Error(`Failed to update user password: ${error.message}`);
+    }
+  }
+
   // --- ATOMIC TELECALLER DELETION (RPC) ---
   public async deleteTelecaller(id: string, adminUser?: User): Promise<{ success: boolean; unassignedLeadsCount: number }> {
+    if (this.useFallback) return devFallbackRepository!.deleteTelecaller(id, adminUser);
     const orgId = this.getOrganizationId(adminUser);
     const adminId = adminUser?.id || 'usr_admin_001';
 
@@ -293,15 +459,6 @@ export class DbRepository {
     return { success: true, unassignedLeadsCount };
   }
 
-  public async updateUserPassword(userId: string, newPasswordHash: string): Promise<boolean> {
-    const { error } = await this.client
-      .from('users')
-      .update({ password_hash: newPasswordHash, updated_at: new Date().toISOString() })
-      .eq('id', userId);
-
-    return !error;
-  }
-
   // --- LEAD METHODS ---
   public async getAllLeads(filter?: {
     brand?: 'ALL' | BusinessBrand;
@@ -309,6 +466,7 @@ export class DbRepository {
     status?: LeadStatus;
     search?: string;
   }, userContext?: User): Promise<Lead[]> {
+    if (this.useFallback) return devFallbackRepository!.getAllLeads(filter, userContext);
     const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
     await this.recalculateFollowUpStatuses(orgId);
 
@@ -427,6 +585,7 @@ export class DbRepository {
   }
 
   public async getLeadById(id: string, userContext?: User): Promise<Lead | undefined> {
+    if (this.useFallback) return devFallbackRepository!.getLeadById(id, userContext);
     const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
     const { data, error } = await this.client
       .from('leads')
@@ -496,6 +655,7 @@ export class DbRepository {
     adminUser?: User,
     defaultBrand?: BusinessBrand
   ): Promise<{ importedCount: number; failedCount: number; leads: Lead[] }> {
+    if (this.useFallback) return devFallbackRepository!.importLeads(rows, assignedToTelecallerId, adminUser, defaultBrand);
     const orgId = this.getOrganizationId(adminUser);
     const now = new Date();
     const importedLeads: Lead[] = [];
@@ -600,6 +760,7 @@ export class DbRepository {
     telecallerId: string | null,
     adminUser: User
   ): Promise<{ assignedCount: number; leads: Lead[] }> {
+    if (this.useFallback) return devFallbackRepository!.assignLeads(leadIds, telecallerId, adminUser);
     const orgId = this.getOrganizationId(adminUser);
 
     // Call Atomic RPC
@@ -677,6 +838,7 @@ export class DbRepository {
     brandFilter?: 'ALL' | BusinessBrand,
     adminUser?: User
   ): Promise<{ vidyaAssigned: number; estateAssigned: number; totalAssigned: number; message: string }> {
+    if (this.useFallback) return devFallbackRepository!.autoDistributeLeads(brandFilter, adminUser);
     const orgId = this.getOrganizationId(adminUser);
     const adminId = adminUser?.id || 'usr_admin_001';
 
@@ -810,6 +972,10 @@ export class DbRepository {
       note?: string;
     };
   }, userContext?: User): Promise<{ callActivity: CallActivity; lead: Lead; followUp?: FollowUp }> {
+    if (this.useFallback) {
+      const res = await devFallbackRepository!.recordCallActivity(data, userContext);
+      return { callActivity: res.callActivity, lead: res.lead, followUp: res.followUp };
+    }
     const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
 
     const { data: rpcData, error } = await this.client.rpc('record_call_activity_atomic', {
@@ -950,6 +1116,10 @@ export class DbRepository {
     dueTime: string;
     note?: string;
   }, userContext?: User): Promise<FollowUp> {
+    if (this.useFallback) {
+      const res = await devFallbackRepository!.scheduleFollowUp(data, userContext);
+      return res.followUp;
+    }
     const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
 
     const { data: rpcData, error } = await this.client.rpc('schedule_follow_up_atomic', {
@@ -1029,6 +1199,7 @@ export class DbRepository {
     user: User,
     completionNote?: string
   ): Promise<{ followUp: FollowUp; lead: Lead }> {
+    if (this.useFallback) return devFallbackRepository!.completeFollowUp(followUpId, user, completionNote);
     const orgId = this.getOrganizationId(user);
 
     const { data: rpcData, error } = await this.client.rpc('complete_follow_up_atomic', {
@@ -1101,6 +1272,7 @@ export class DbRepository {
     brandFilter?: 'ALL' | BusinessBrand,
     userContext?: User
   ): Promise<{ overdue: FollowUp[]; today: FollowUp[]; upcoming: FollowUp[]; completed: FollowUp[] }> {
+    if (this.useFallback) return devFallbackRepository!.getFollowUps(telecallerId, brandFilter, userContext);
     const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
     await this.recalculateFollowUpStatuses(orgId);
 
@@ -1153,6 +1325,10 @@ export class DbRepository {
 
   // --- RECALCULATE FOLLOW UP STATUSES ---
   public async recalculateFollowUpStatuses(orgId?: string): Promise<void> {
+    if (this.useFallback) {
+      devFallbackRepository!.recalculateFollowUpStatuses();
+      return;
+    }
     const resolvedOrgId = orgId || this.defaultOrgId;
     const todayStr = new Date().toISOString().split('T')[0];
 
@@ -1166,6 +1342,10 @@ export class DbRepository {
 
   // --- LEAD HISTORY ---
   public async getLeadHistory(leadId: string, userContext?: User): Promise<LeadHistory[]> {
+    if (this.useFallback) {
+      const res = await devFallbackRepository!.getLeadHistory(leadId, userContext);
+      return res.history;
+    }
     const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
     const { data: rows } = await this.client
       .from('lead_history')
@@ -1183,6 +1363,7 @@ export class DbRepository {
 
   // --- ADMIN METRICS ---
   public async getAdminMetrics(brandFilter?: 'ALL' | BusinessBrand, userContext?: User): Promise<AdminMetrics> {
+    if (this.useFallback) return devFallbackRepository!.getAdminMetrics(brandFilter, userContext);
     const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
     await this.recalculateFollowUpStatuses(orgId);
     const todayStr = new Date().toISOString().split('T')[0];
@@ -1314,6 +1495,7 @@ export class DbRepository {
 
   // --- TELECALLER METRICS ---
   public async getTelecallerMetrics(telecallerId: string, userContext?: User): Promise<TelecallerMetrics> {
+    if (this.useFallback) return devFallbackRepository!.getTelecallerMetrics(telecallerId, userContext);
     const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
     const tc = await this.findUserById(telecallerId, userContext);
     const todayStr = new Date().toISOString().split('T')[0];
@@ -1389,6 +1571,7 @@ export class DbRepository {
 
   // --- ALL TELECALLERS PERFORMANCE ---
   public async getAllTelecallersPerformance(brandFilter?: 'ALL' | BusinessBrand, userContext?: User): Promise<TelecallerMetrics[]> {
+    if (this.useFallback) return devFallbackRepository!.getAllTelecallersPerformance(brandFilter, userContext);
     const telecallers = await this.getTelecallers(brandFilter, userContext);
     return Promise.all(telecallers.map((tc) => this.getTelecallerMetrics(tc.id, userContext)));
   }

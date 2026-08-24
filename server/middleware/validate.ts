@@ -24,6 +24,24 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required').max(255, 'Password too long'),
 });
 
+export const registerAdminSchema = z
+  .object({
+    companyName: z.string().min(1, 'Company or Admin name cannot be empty').max(255, 'Company name must be under 255 characters'),
+    loginId: z
+      .string()
+      .min(3, 'Login ID must be at least 3 characters long')
+      .max(50, 'Login ID cannot exceed 50 characters')
+      .regex(/^[a-zA-Z0-9_-]+$/, 'Login ID can only contain letters, numbers, hyphens, and underscores'),
+    password: z.string().min(8, 'Password must be at least 8 characters long').max(255, 'Password too long'),
+    confirmPassword: z.string().optional(),
+    phone: z.string().max(50).optional(),
+    email: z.string().max(255).optional(),
+  })
+  .refine((data) => !data.confirmPassword || data.password === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  });
+
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required').max(255),
   newPassword: z.string().min(8, 'New password must be at least 8 characters long').max(255),
@@ -32,8 +50,8 @@ export const changePasswordSchema = z.object({
 // 2. Telecaller Admin Schemas
 export const createTelecallerSchema = z.object({
   name: z.string().min(1, 'Name is required').max(255),
-  loginId: z.string().min(1, 'Login ID is required').max(100),
-  password: z.string().min(4, 'Password must be at least 4 characters').max(255),
+  loginId: z.string().max(100).optional(),
+  password: z.string().min(4, 'Password must be at least 4 characters').max(255).optional(),
   brandAccess: z.enum(['APNI_VIDYA', 'APNI_ESTATE', 'BOTH']),
   phone: z.string().max(50).optional(),
   email: z.string().max(255).optional(),
