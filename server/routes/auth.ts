@@ -2,9 +2,49 @@ import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { db } from '../db';
 import { generateToken, sanitizeUser, requireAuth, AuthenticatedRequest } from '../auth';
-import { validateRequest, loginSchema, changePasswordSchema } from '../middleware/validate';
+import { validateRequest, loginSchema, registerAdminSchema, changePasswordSchema } from '../middleware/validate';
 
 export const authRouter = Router();
+
+// POST /api/auth/register (Company / Admin Self-Registration)
+authRouter.post('/register', validateRequest(registerAdminSchema), async (req, res: Response): Promise<void> => {
+  const { companyName, loginId, password, phone, email } = req.body;
+
+  try {
+    const cleanLoginId = loginId.trim().toUpperCase();
+    const existing = await db.findUserByLoginId(cleanLoginId);
+    if (existing) {
+      res.status(400).json({ error: 'Login ID already exists. Please choose another.' });
+      return;
+    }
+
+    const salt = bcrypt.genSaltSync(10);
+    const passwordHash = bcrypt.hashSync(password.trim(), salt);
+
+    const safeUser = await db.registerAdmin({
+      companyName: companyName.trim(),
+      loginId: cleanLoginId,
+      passwordHash,
+      phone: phone?.trim(),
+      email: email?.trim(),
+    });
+
+    const token = generateToken(safeUser as any);
+
+    res.status(201).json({
+      message: 'Company Admin account created successfully.',
+      token,
+      user: safeUser,
+    });
+  } catch (err: any) {
+    if (err.message && err.message.includes('already exists')) {
+      res.status(400).json({ error: 'Login ID already exists. Please choose another.' });
+      return;
+    }
+    const errorMsg = process.env.NODE_ENV === 'production' ? 'Unable to create your account right now. Please try again later.' : err.message || 'Registration error.';
+    res.status(500).json({ error: errorMsg });
+  }
+});
 
 // POST /api/auth/login
 authRouter.post('/login', validateRequest(loginSchema), async (req, res: Response): Promise<void> => {

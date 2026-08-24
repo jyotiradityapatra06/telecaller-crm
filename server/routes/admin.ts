@@ -21,8 +21,8 @@ adminRouter.use(requireAdmin);
 adminRouter.get('/telecallers', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const brand = req.query.brand as 'ALL' | BusinessBrand | undefined;
-    const telecallers = await db.getTelecallers(brand);
-    const performance = await db.getAllTelecallersPerformance(brand);
+    const telecallers = await db.getTelecallers(brand, req.user);
+    const performance = await db.getAllTelecallersPerformance(brand, req.user);
 
     const enriched = telecallers.map((tc) => {
       const perf = performance.find((p) => p.telecallerId === tc.id);
@@ -44,7 +44,7 @@ adminRouter.post('/telecallers', validateRequest(createTelecallerSchema), async 
   const { name, loginId, password, brandAccess, phone, email, dailyTarget } = req.body;
 
   try {
-    const newTelecaller = await db.createTelecaller({
+    const result: any = await db.createTelecaller({
       name,
       loginId,
       password,
@@ -52,11 +52,22 @@ adminRouter.post('/telecallers', validateRequest(createTelecallerSchema), async 
       phone,
       email,
       dailyTarget: Number(dailyTarget) || 50,
-    });
+    }, req.user);
+
+    const safeUser = result.user || result;
+    const tempPassword = result.temporaryPassword;
 
     res.status(201).json({
-      message: `Telecaller ${newTelecaller.name} (${newTelecaller.loginId}) [${newTelecaller.brandAccess}] created successfully`,
-      telecaller: newTelecaller,
+      message: `Telecaller ${safeUser.name} (${safeUser.loginId}) [${safeUser.brandAccess}] created successfully`,
+      telecaller: safeUser,
+      credentials: tempPassword
+        ? {
+            name: safeUser.name,
+            loginId: safeUser.loginId,
+            temporaryPassword: tempPassword,
+            brandAccess: safeUser.brandAccess,
+          }
+        : undefined,
     });
   } catch (err: any) {
     res.status(400).json({ error: err.message || 'Failed to create telecaller' });
@@ -69,7 +80,7 @@ adminRouter.patch('/telecallers/:id', validateRequest(updateTelecallerSchema), a
   const updates = req.body;
 
   try {
-    const updated = await db.updateTelecaller(id, updates);
+    const updated = await db.updateTelecaller(id, updates, req.user);
     res.json({
       message: `Telecaller ${updated.name} updated successfully`,
       telecaller: updated,
@@ -84,13 +95,30 @@ adminRouter.delete('/telecallers/:id', async (req: AuthenticatedRequest, res: Re
   const { id } = req.params;
 
   try {
-    const result = await db.deleteTelecaller(id);
+    const result = await db.deleteTelecaller(id, req.user);
     res.json({
       message: `Telecaller removed. ${result.unassignedLeadsCount} leads moved to unassigned pool.`,
       result,
     });
   } catch (err: any) {
     res.status(404).json({ error: err.message || 'Failed to delete telecaller' });
+  }
+});
+
+// POST /api/admin/telecallers/:id/reset-password
+adminRouter.post('/telecallers/:id/reset-password', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  try {
+    const result = await db.resetTelecallerPassword(id, req.user);
+    res.json({
+      message: 'Telecaller password reset successfully.',
+      user: result.user,
+      temporaryPassword: result.temporaryPassword,
+    });
+  } catch (err: any) {
+    const status = err.message?.includes('not found') ? 404 : 403;
+    res.status(status).json({ error: err.message || 'Failed to reset telecaller password' });
   }
 });
 
@@ -104,7 +132,7 @@ adminRouter.get('/leads', async (req: AuthenticatedRequest, res: Response): Prom
       assignedTo: assignedTo as string,
       status: status as LeadStatus,
       search: search as string,
-    });
+    }, req.user);
 
     res.json({ leads, total: leads.length });
   } catch (err: any) {
@@ -244,7 +272,7 @@ adminRouter.get('/leads/:id/history', async (req: AuthenticatedRequest, res: Res
   const { id } = req.params;
 
   try {
-    const history = await db.getLeadHistory(id);
+    const history = await db.getLeadHistory(id, req.user);
     res.json({ history });
   } catch (err: any) {
     const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to fetch lead history.';
@@ -256,8 +284,8 @@ adminRouter.get('/leads/:id/history', async (req: AuthenticatedRequest, res: Res
 adminRouter.get('/performance', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const brand = req.query.brand as 'ALL' | BusinessBrand | undefined;
-    const metrics = await db.getAdminMetrics(brand);
-    const telecallersPerformance = await db.getAllTelecallersPerformance(brand);
+    const metrics = await db.getAdminMetrics(brand, req.user);
+    const telecallersPerformance = await db.getAllTelecallersPerformance(brand, req.user);
 
     res.json({
       metrics,
@@ -274,7 +302,7 @@ adminRouter.get('/telecallers/:id/performance', async (req: AuthenticatedRequest
   const { id } = req.params;
 
   try {
-    const metrics = await db.getTelecallerMetrics(id);
+    const metrics = await db.getTelecallerMetrics(id, req.user);
     res.json({ metrics });
   } catch (err: any) {
     const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to fetch telecaller metrics.';
@@ -286,7 +314,7 @@ adminRouter.get('/telecallers/:id/performance', async (req: AuthenticatedRequest
 adminRouter.get('/followups', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const brand = req.query.brand as 'ALL' | BusinessBrand | undefined;
-    const followups = await db.getFollowUps(undefined, brand);
+    const followups = await db.getFollowUps(undefined, brand, req.user);
     res.json(followups);
   } catch (err: any) {
     const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to fetch follow-ups.';

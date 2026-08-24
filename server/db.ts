@@ -2,8 +2,8 @@ import { dbRepository } from './repository/dbRepository';
 
 // Database abstraction delegating all operations to Supabase PostgreSQL repository
 class DatabaseAdapter {
-  public getOrganizationId() {
-    return dbRepository.getOrganizationId();
+  public getOrganizationId(user?: any) {
+    return dbRepository.getOrganizationId(user);
   }
 
   public loadFromDisk(): void {
@@ -22,36 +22,44 @@ class DatabaseAdapter {
     return dbRepository.recalculateFollowUpStatuses();
   }
 
-  public getAllUsers() {
-    return dbRepository.getAllUsers();
+  public getAllUsers(user?: any) {
+    return dbRepository.getAllUsers(user);
   }
 
-  public getTelecallers(brandFilter?: any) {
-    return dbRepository.getTelecallers(brandFilter);
+  public getTelecallers(brandFilter?: any, user?: any) {
+    return dbRepository.getTelecallers(brandFilter, user);
   }
 
-  public findUserById(id: string) {
-    return dbRepository.findUserById(id);
+  public findUserById(id: string, userContext?: any) {
+    return dbRepository.findUserById(id, userContext);
   }
 
   public findUserByLoginId(loginId: string) {
     return dbRepository.findUserByLoginId(loginId);
   }
 
-  public createTelecaller(data: any) {
-    return dbRepository.createTelecaller(data);
+  public registerAdmin(data: any) {
+    return dbRepository.registerAdmin(data);
   }
 
-  public updateTelecaller(id: string, updates: any) {
-    return dbRepository.updateTelecaller(id, updates);
+  public createTelecaller(data: any, adminUser?: any) {
+    return dbRepository.createTelecaller(data, adminUser);
   }
 
-  public deleteTelecaller(id: string) {
-    return dbRepository.deleteTelecaller(id);
+  public updateTelecaller(id: string, updates: any, adminUser?: any) {
+    return dbRepository.updateTelecaller(id, updates, adminUser);
   }
 
-  public updateUserPassword(userId: string, newHash: string) {
-    return dbRepository.updateUserPassword(userId, newHash);
+  public deleteTelecaller(id: string, adminUser?: any) {
+    return dbRepository.deleteTelecaller(id, adminUser);
+  }
+
+  public resetTelecallerPassword(id: string, adminUser?: any) {
+    return dbRepository.resetTelecallerPassword(id, adminUser);
+  }
+
+  public updateUserPassword(userId: string, newHash: string, userContext?: any) {
+    return dbRepository.updateUserPassword(userId, newHash, userContext);
   }
 
   public getAllLeads(filter?: any, userContext?: any) {
@@ -102,8 +110,8 @@ class DatabaseAdapter {
     return dbRepository.getTelecallerMetrics(telecallerId, userContext);
   }
 
-  public getAllTelecallersPerformance(brandFilter?: any) {
-    return dbRepository.getAllTelecallersPerformance(brandFilter);
+  public getAllTelecallersPerformance(brandFilter?: any, user?: any) {
+    return dbRepository.getAllTelecallersPerformance(brandFilter, user);
   }
 }
 

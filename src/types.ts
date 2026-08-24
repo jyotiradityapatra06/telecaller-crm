@@ -26,8 +26,19 @@ export type LeadStatus =
 
 export type FollowUpStatus = 'PENDING' | 'COMPLETED' | 'OVERDUE' | 'CANCELLED';
 
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  isDemo?: boolean;
+  isActive?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface User {
   id: string;
+  organizationId?: string;
   name: string;
   loginId: string; // e.g. "admin", "TC_VIDYA_1", "TC_ESTATE_1"
   role: UserRole;
@@ -42,6 +53,7 @@ export interface User {
 
 export interface LeadHistory {
   id: string;
+  organizationId?: string;
   leadId: string;
   userId: string;
   userName: string;
@@ -66,6 +78,7 @@ export interface LeadHistory {
 
 export interface CallActivity {
   id: string;
+  organizationId?: string;
   leadId: string;
   telecallerId: string;
   telecallerName: string;
@@ -78,6 +91,7 @@ export interface CallActivity {
 
 export interface FollowUp {
   id: string;
+  organizationId?: string;
   leadId: string;
   leadName: string;
   leadPhone: string;
@@ -96,6 +110,7 @@ export interface FollowUp {
 
 export interface Lead {
   id: string;
+  organizationId?: string;
   name: string;
   phone: string;
   email?: string;
@@ -212,6 +227,7 @@ export interface AdminMetrics {
 
 export interface AuthUser {
   id: string;
+  organizationId?: string;
   name: string;
   loginId: string;
   role: UserRole;

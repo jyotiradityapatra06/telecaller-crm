@@ -8,7 +8,7 @@ import helmet from 'helmet';
 import { authRouter } from './server/routes/auth';
 import { adminRouter } from './server/routes/admin';
 import { telecallerRouter } from './server/routes/telecaller';
-import { getSupabaseClient } from './server/supabase';
+import { getSupabaseClient, isSupabaseConfigured } from './server/supabase';
 
 async function startServer() {
   const app = express();
@@ -62,7 +62,7 @@ async function startServer() {
   // 3. API Rate Limiters
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 10, // 10 attempts per 15 minutes
+    max: process.env.NODE_ENV === 'production' ? 30 : 200, // 30 attempts per 15 mins in production, 200 in development
     message: { error: 'Too many authentication attempts. Please try again after 15 minutes.' },
     standardHeaders: true,
     legacyHeaders: false,
@@ -86,6 +86,7 @@ async function startServer() {
 
   // Apply rate limiters to specific security-sensitive routes
   app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/register', authLimiter);
   app.use('/api/auth/password', authLimiter);
   app.use('/api/admin/leads/import', importLimiter);
   app.use('/api/telecaller/calls', mutationLimiter);
@@ -97,15 +98,20 @@ async function startServer() {
     let dbDetails = 'not_configured';
 
     try {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        const { data, error } = await supabase.from('organizations').select('id').limit(1);
-        if (!error && Array.isArray(data)) {
-          dbConnected = true;
-          dbDetails = 'connected';
-        } else {
-          dbDetails = error?.message || 'query_failed';
+      if (isSupabaseConfigured()) {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const { data, error } = await supabase.from('organizations').select('id').limit(1);
+          if (!error && Array.isArray(data)) {
+            dbConnected = true;
+            dbDetails = 'connected';
+          } else {
+            dbDetails = error?.message || 'query_failed';
+          }
         }
+      } else if (process.env.NODE_ENV !== 'production') {
+        dbConnected = true;
+        dbDetails = 'development_fallback';
       }
     } catch (err: any) {
       dbDetails = err.message || 'connection_exception';

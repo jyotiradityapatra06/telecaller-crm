@@ -17,6 +17,7 @@ export interface TokenPayload {
   role: UserRole;
   brandAccess: BrandAccess;
   name: string;
+  organizationId: string;
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -30,6 +31,7 @@ export function generateToken(user: User): string {
     role: user.role,
     brandAccess: user.brandAccess || 'BOTH',
     name: user.name,
+    organizationId: user.organizationId || 'org_demo_001',
   };
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 }
@@ -49,6 +51,7 @@ export function sanitizeUser(user: User): AuthUser {
     loginId: user.loginId,
     role: user.role,
     brandAccess: user.brandAccess || 'BOTH',
+    organizationId: user.organizationId || 'org_demo_001',
     dailyTarget: user.dailyTarget,
     phone: user.phone,
     email: user.email,
@@ -57,33 +60,41 @@ export function sanitizeUser(user: User): AuthUser {
 }
 
 export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'Unauthorized: Authentication token is required' });
-    return;
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'Unauthorized: Authentication token is required' });
+      return;
+    }
+
+    const token = authHeader.split(' ')[1];
+    const payload = verifyToken(token);
+
+    if (!payload) {
+      res.status(401).json({ error: 'Unauthorized: Invalid or expired session token' });
+      return;
+    }
+
+    const user = await dbRepository.findUserById(payload.userId);
+    if (!user) {
+      res.status(401).json({ error: 'Unauthorized: User account not found' });
+      return;
+    }
+
+    if (!user.isActive) {
+      res.status(403).json({ error: 'Forbidden: This account has been deactivated by the Administrator' });
+      return;
+    }
+
+    req.user = user;
+    next();
+  } catch (err: any) {
+    console.error('⚠️ [requireAuth] Authentication exception caught safely:', err?.message || err);
+    const errorMsg = process.env.NODE_ENV === 'production'
+      ? 'Internal server error.'
+      : err?.message || 'Authentication error.';
+    res.status(500).json({ error: errorMsg });
   }
-
-  const token = authHeader.split(' ')[1];
-  const payload = verifyToken(token);
-
-  if (!payload) {
-    res.status(401).json({ error: 'Unauthorized: Invalid or expired session token' });
-    return;
-  }
-
-  const user = await dbRepository.findUserById(payload.userId);
-  if (!user) {
-    res.status(401).json({ error: 'Unauthorized: User account not found' });
-    return;
-  }
-
-  if (!user.isActive) {
-    res.status(403).json({ error: 'Forbidden: This account has been deactivated by the Administrator' });
-    return;
-  }
-
-  req.user = user;
-  next();
 }
 
 export function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
