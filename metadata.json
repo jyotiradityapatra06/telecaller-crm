@@ -1,0 +1,6 @@
+{
+  "name": "Apni CRM - Multi-Brand Master & Telecaller Suite",
+  "description": "Clean, compact CRM featuring a Master Admin Panel and dedicated isolated Telecaller interfaces for Apni Vidya (Education) and Apni Estate (Real Estate).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
