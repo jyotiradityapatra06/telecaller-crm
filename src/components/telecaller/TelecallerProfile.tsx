@@ -32,7 +32,6 @@ interface TelecallerProfileProps {
   allTelecallers?: AuthUser[];
   onSwitchTelecaller?: (loginId: string) => void;
   onSwitchToAdmin?: () => void;
-  onResetData?: () => void;
   onLogout: () => void;
 }
 
@@ -44,7 +43,6 @@ export const TelecallerProfile: React.FC<TelecallerProfileProps> = ({
   allTelecallers = [],
   onSwitchTelecaller,
   onSwitchToAdmin,
-  onResetData,
   onLogout,
 }) => {
   const currentUser = propCurrentUser || propTelecaller || {

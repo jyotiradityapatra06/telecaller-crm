@@ -6,7 +6,6 @@ import {
   Building2,
   Volume2,
   VolumeX,
-  RotateCcw,
   LogOut,
   User,
 } from 'lucide-react';
@@ -18,7 +17,6 @@ interface TopHeaderProps {
   allTelecallers: AuthUser[];
   onSwitchUser: (loginId: string) => void;
   onLogout: () => void;
-  onResetData: () => void;
 }
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
@@ -26,7 +24,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   allTelecallers,
   onSwitchUser,
   onLogout,
-  onResetData,
 }) => {
   const isSoundOn = soundManager.isEnabled();
   const isAdmin = currentUser.role === 'ADMIN';
@@ -130,17 +127,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           aria-label="Toggle interaction sounds"
         >
           {isSoundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-        </button>
-
-        {/* Reset Database */}
-        <button
-          type="button"
-          onClick={onResetData}
-          className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-rose-400 border border-slate-800 transition-colors cursor-pointer min-h-[38px] min-w-[38px] flex items-center justify-center"
-          title="Reset Database"
-          aria-label="Reset database to seed state"
-        >
-          <RotateCcw className="w-4 h-4" />
         </button>
 
         {/* Sign Out */}

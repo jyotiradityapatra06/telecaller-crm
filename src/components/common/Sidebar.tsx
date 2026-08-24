@@ -11,7 +11,6 @@ import {
   GraduationCap,
   Building2,
   LogOut,
-  RotateCcw,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -25,7 +24,6 @@ interface SidebarProps {
   allTelecallers: AuthUser[];
   onSwitchUser: (loginId: string) => void;
   onLogout: () => void;
-  onResetData: () => void;
   followUpBadgeCount?: number;
   unassignedBadgeCount?: number;
 }
@@ -37,7 +35,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   allTelecallers,
   onSwitchUser,
   onLogout,
-  onResetData,
   followUpBadgeCount = 0,
   unassignedBadgeCount = 0,
 }) => {
@@ -254,15 +251,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             {isSoundOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
             <span className="text-[11px]">{isSoundOn ? 'Sound On' : 'Muted'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={onResetData}
-            className="flex items-center justify-center p-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-rose-400 border border-slate-800 transition-colors cursor-pointer"
-            title="Reset Database to Seed State"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
           </button>
 
           <button

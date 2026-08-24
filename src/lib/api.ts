@@ -356,10 +356,6 @@ class ApiClient {
   public async getTelecallerPerformance(): Promise<{ metrics: TelecallerMetrics; brandAccess: BrandAccess }> {
     return this.request('/api/telecaller/performance');
   }
-
-  public async resetData(): Promise<{ message: string }> {
-    return this.request('/api/reset-data', { method: 'POST' });
-  }
 }
 
 export const api = new ApiClient();

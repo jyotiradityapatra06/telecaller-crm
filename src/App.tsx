@@ -72,15 +72,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Check local token or auto-login default demo user on first load
+    // Check local token or restore session
     const user = api.getCurrentUser();
     if (user) {
       fetchData();
     } else {
-      // Auto authenticate with TC001 for immediate instant-preview readiness
-      api.login('TC001', 'password123')
-        .then(() => fetchData())
-        .catch(() => setIsLoadingInitial(false));
+      setIsLoadingInitial(false);
     }
   }, [fetchData]);
 
@@ -119,17 +116,6 @@ export default function App() {
     setSelectedLeadForDetail(null);
     setSelectedTcForDetail(null);
     setIsCallModalOpen(false);
-  };
-
-  // Reset database to initial sample data
-  const handleResetData = async () => {
-    try {
-      await api.resetData();
-      soundManager.playSuccess();
-      fetchData();
-    } catch (err: any) {
-      alert('Failed to reset data: ' + err.message);
-    }
   };
 
   // Initiate Call
@@ -217,7 +203,6 @@ export default function App() {
         allTelecallers={allTelecallers}
         onSwitchUser={handleQuickSwitchUser}
         onLogout={handleLogout}
-        onResetData={handleResetData}
         followUpBadgeCount={overdueOrTodayCount}
         unassignedBadgeCount={unassignedCount}
       />
@@ -231,7 +216,6 @@ export default function App() {
             allTelecallers={allTelecallers}
             onSwitchUser={handleQuickSwitchUser}
             onLogout={handleLogout}
-            onResetData={handleResetData}
           />
         </div>
 
@@ -282,7 +266,6 @@ export default function App() {
                   leads={leads}
                   onSwitchTelecaller={handleQuickSwitchUser}
                   onSwitchToAdmin={() => handleQuickSwitchUser('admin')}
-                  onResetData={handleResetData}
                   onLogout={handleLogout}
                 />
               )}
