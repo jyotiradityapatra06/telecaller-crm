@@ -2,6 +2,15 @@ import { Router, Response } from 'express';
 import { db } from '../db';
 import { requireAdmin, AuthenticatedRequest } from '../auth';
 import { LeadStatus, BusinessBrand, BrandAccess } from '../../src/types';
+import {
+  validateRequest,
+  createTelecallerSchema,
+  updateTelecallerSchema,
+  createLeadSchema,
+  importLeadsSchema,
+  assignLeadsSchema,
+  autoDistributeSchema,
+} from '../middleware/validate';
 
 export const adminRouter = Router();
 
@@ -9,33 +18,33 @@ export const adminRouter = Router();
 adminRouter.use(requireAdmin);
 
 // GET /api/admin/telecallers
-adminRouter.get('/telecallers', (req: AuthenticatedRequest, res: Response): void => {
-  const brand = req.query.brand as 'ALL' | BusinessBrand | undefined;
-  const telecallers = db.getTelecallers(brand);
-  const performance = db.getAllTelecallersPerformance(brand);
+adminRouter.get('/telecallers', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const brand = req.query.brand as 'ALL' | BusinessBrand | undefined;
+    const telecallers = await db.getTelecallers(brand);
+    const performance = await db.getAllTelecallersPerformance(brand);
 
-  const enriched = telecallers.map((tc) => {
-    const perf = performance.find((p) => p.telecallerId === tc.id);
-    return {
-      ...tc,
-      metrics: perf,
-    };
-  });
+    const enriched = telecallers.map((tc) => {
+      const perf = performance.find((p) => p.telecallerId === tc.id);
+      return {
+        ...tc,
+        metrics: perf,
+      };
+    });
 
-  res.json({ telecallers: enriched });
+    res.json({ telecallers: enriched });
+  } catch (err: any) {
+    const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to fetch telecallers.';
+    res.status(500).json({ error: errorMsg });
+  }
 });
 
 // POST /api/admin/telecallers
-adminRouter.post('/telecallers', (req: AuthenticatedRequest, res: Response): void => {
+adminRouter.post('/telecallers', validateRequest(createTelecallerSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { name, loginId, password, brandAccess, phone, email, dailyTarget } = req.body;
 
-  if (!name || !loginId || !password) {
-    res.status(400).json({ error: 'Name, Telecaller ID, and Password are required.' });
-    return;
-  }
-
   try {
-    const newTelecaller = db.createTelecaller({
+    const newTelecaller = await db.createTelecaller({
       name,
       loginId,
       password,
@@ -55,12 +64,12 @@ adminRouter.post('/telecallers', (req: AuthenticatedRequest, res: Response): voi
 });
 
 // PATCH /api/admin/telecallers/:id
-adminRouter.patch('/telecallers/:id', (req: AuthenticatedRequest, res: Response): void => {
+adminRouter.patch('/telecallers/:id', validateRequest(updateTelecallerSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const updates = req.body;
 
   try {
-    const updated = db.updateTelecaller(id, updates);
+    const updated = await db.updateTelecaller(id, updates);
     res.json({
       message: `Telecaller ${updated.name} updated successfully`,
       telecaller: updated,
@@ -71,11 +80,11 @@ adminRouter.patch('/telecallers/:id', (req: AuthenticatedRequest, res: Response)
 });
 
 // DELETE /api/admin/telecallers/:id
-adminRouter.delete('/telecallers/:id', (req: AuthenticatedRequest, res: Response): void => {
+adminRouter.delete('/telecallers/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
   try {
-    const result = db.deleteTelecaller(id);
+    const result = await db.deleteTelecaller(id);
     res.json({
       message: `Telecaller removed. ${result.unassignedLeadsCount} leads moved to unassigned pool.`,
       result,
@@ -86,21 +95,26 @@ adminRouter.delete('/telecallers/:id', (req: AuthenticatedRequest, res: Response
 });
 
 // GET /api/admin/leads
-adminRouter.get('/leads', (req: AuthenticatedRequest, res: Response): void => {
-  const { brand, assignedTo, status, search } = req.query;
+adminRouter.get('/leads', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { brand, assignedTo, status, search } = req.query;
 
-  const leads = db.getAllLeads({
-    brand: brand as 'ALL' | BusinessBrand,
-    assignedTo: assignedTo as string,
-    status: status as LeadStatus,
-    search: search as string,
-  });
+    const leads = await db.getAllLeads({
+      brand: brand as 'ALL' | BusinessBrand,
+      assignedTo: assignedTo as string,
+      status: status as LeadStatus,
+      search: search as string,
+    });
 
-  res.json({ leads, total: leads.length });
+    res.json({ leads, total: leads.length });
+  } catch (err: any) {
+    const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to fetch leads.';
+    res.status(500).json({ error: errorMsg });
+  }
 });
 
 // POST /api/admin/leads (create a single lead with brand custom fields)
-adminRouter.post('/leads', (req: AuthenticatedRequest, res: Response): void => {
+adminRouter.post('/leads', validateRequest(createLeadSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const {
     name,
     phone,
@@ -119,15 +133,10 @@ adminRouter.post('/leads', (req: AuthenticatedRequest, res: Response): void => {
     notes,
   } = req.body;
 
-  if (!name || !phone) {
-    res.status(400).json({ error: 'Name and Phone number are required.' });
-    return;
-  }
-
   const selectedBrand: BusinessBrand = (brand as BusinessBrand) || (courseInterest ? 'APNI_VIDYA' : 'APNI_ESTATE');
 
   try {
-    const result = db.importLeads(
+    const result = await db.importLeads(
       [
         {
           name,
@@ -160,12 +169,13 @@ adminRouter.post('/leads', (req: AuthenticatedRequest, res: Response): void => {
       res.status(400).json({ error: 'Failed to create lead with provided details.' });
     }
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to create lead.' });
+    const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to create lead.';
+    res.status(500).json({ error: errorMsg });
   }
 });
 
 // POST /api/admin/leads/import
-adminRouter.post('/leads/import', (req: AuthenticatedRequest, res: Response): void => {
+adminRouter.post('/leads/import', validateRequest(importLeadsSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { rows, assignedTelecallerId, defaultBrand } = req.body;
 
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -173,8 +183,13 @@ adminRouter.post('/leads/import', (req: AuthenticatedRequest, res: Response): vo
     return;
   }
 
+  if (rows.length > 5000) {
+    res.status(400).json({ error: 'Maximum 5000 leads per import batch allowed.' });
+    return;
+  }
+
   try {
-    const result = db.importLeads(rows, assignedTelecallerId, req.user, defaultBrand);
+    const result = await db.importLeads(rows, assignedTelecallerId, req.user, defaultBrand);
     res.status(201).json({
       message: `Successfully imported ${result.importedCount} leads (${result.failedCount} invalid rows skipped).`,
       importedCount: result.importedCount,
@@ -182,103 +197,99 @@ adminRouter.post('/leads/import', (req: AuthenticatedRequest, res: Response): vo
       leads: result.leads,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to import leads.' });
+    const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to import leads.';
+    res.status(500).json({ error: errorMsg });
   }
 });
 
 // POST /api/admin/leads/assign
-adminRouter.post('/leads/assign', (req: AuthenticatedRequest, res: Response): void => {
+adminRouter.post('/leads/assign', validateRequest(assignLeadsSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { leadIds, telecallerId } = req.body;
 
-  if (!Array.isArray(leadIds) || leadIds.length === 0) {
-    res.status(400).json({ error: 'Please select at least one lead to assign.' });
-    return;
-  }
-
-  if (!req.user) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return;
-  }
-
   try {
-    const result = db.assignLeads(leadIds, telecallerId || null, req.user);
+    const result = await db.assignLeads(leadIds, telecallerId, req.user!);
     res.json({
-      message: `Successfully assigned ${result.assignedCount} leads.`,
+      message: telecallerId
+        ? `Successfully assigned ${result.assignedCount} leads to telecaller.`
+        : `Successfully unassigned ${result.assignedCount} leads back to pool.`,
       assignedCount: result.assignedCount,
       leads: result.leads,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to assign leads.' });
+    const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to assign leads.';
+    res.status(500).json({ error: errorMsg });
   }
 });
 
 // POST /api/admin/leads/auto-distribute
-adminRouter.post('/leads/auto-distribute', (req: AuthenticatedRequest, res: Response): void => {
+adminRouter.post('/leads/auto-distribute', validateRequest(autoDistributeSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { brand } = req.body;
 
   try {
-    const result = db.autoDistributeLeads(brand as 'ALL' | BusinessBrand, req.user);
-    res.json(result);
+    const result = await db.autoDistributeLeads(brand, req.user!);
+    res.json({
+      message: result.message,
+      vidyaAssigned: result.vidyaAssigned,
+      estateAssigned: result.estateAssigned,
+      totalAssigned: result.totalAssigned,
+    });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to auto-distribute leads.' });
+    const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Auto-distribution failed.';
+    res.status(500).json({ error: errorMsg });
   }
 });
 
 // GET /api/admin/leads/:id/history
-adminRouter.get('/leads/:id/history', (req: AuthenticatedRequest, res: Response): void => {
+adminRouter.get('/leads/:id/history', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const lead = db.getLeadById(id);
 
-  if (!lead) {
-    res.status(404).json({ error: 'Lead not found' });
-    return;
+  try {
+    const history = await db.getLeadHistory(id);
+    res.json({ history });
+  } catch (err: any) {
+    const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to fetch lead history.';
+    res.status(500).json({ error: errorMsg });
   }
-
-  const history = db.getLeadHistory(id);
-  res.json({ lead, history });
 });
 
 // GET /api/admin/performance
-adminRouter.get('/performance', (req: AuthenticatedRequest, res: Response): void => {
-  const brand = req.query.brand as 'ALL' | BusinessBrand | undefined;
-  const metrics = db.getAdminMetrics(brand);
-  const telecallersPerformance = db.getAllTelecallersPerformance(brand);
-  res.json({ metrics, telecallersPerformance });
+adminRouter.get('/performance', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const brand = req.query.brand as 'ALL' | BusinessBrand | undefined;
+    const metrics = await db.getAdminMetrics(brand);
+    const telecallersPerformance = await db.getAllTelecallersPerformance(brand);
+
+    res.json({
+      metrics,
+      telecallersPerformance,
+    });
+  } catch (err: any) {
+    const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to fetch performance metrics.';
+    res.status(500).json({ error: errorMsg });
+  }
 });
 
 // GET /api/admin/telecallers/:id/performance
-adminRouter.get('/telecallers/:id/performance', (req: AuthenticatedRequest, res: Response): void => {
+adminRouter.get('/telecallers/:id/performance', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const tc = db.findUserById(id);
 
-  if (!tc || tc.role !== 'TELECALLER') {
-    res.status(404).json({ error: 'Telecaller not found' });
-    return;
+  try {
+    const metrics = await db.getTelecallerMetrics(id);
+    res.json({ metrics });
+  } catch (err: any) {
+    const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to fetch telecaller metrics.';
+    res.status(500).json({ error: errorMsg });
   }
-
-  const metrics = db.getTelecallerMetrics(id);
-  const assignedLeads = db.getAllLeads({ assignedTo: id });
-
-  res.json({
-    telecaller: {
-      id: tc.id,
-      name: tc.name,
-      loginId: tc.loginId,
-      brandAccess: tc.brandAccess,
-      phone: tc.phone,
-      email: tc.email,
-      dailyTarget: tc.dailyTarget,
-      isActive: tc.isActive,
-      createdAt: tc.createdAt,
-    },
-    metrics,
-    assignedLeads,
-  });
 });
 
 // GET /api/admin/followups
-adminRouter.get('/followups', (req: AuthenticatedRequest, res: Response): void => {
-  const brand = req.query.brand as 'ALL' | BusinessBrand | undefined;
-  const followUps = db.getFollowUps(undefined, brand);
-  res.json(followUps);
+adminRouter.get('/followups', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const brand = req.query.brand as 'ALL' | BusinessBrand | undefined;
+    const followups = await db.getFollowUps(undefined, brand);
+    res.json(followups);
+  } catch (err: any) {
+    const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to fetch follow-ups.';
+    res.status(500).json({ error: errorMsg });
+  }
 });

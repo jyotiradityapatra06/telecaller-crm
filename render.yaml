@@ -1,0 +1,26 @@
+# ==============================================================================
+# TeleCaller CRM Enterprise — Render Infrastructure as Code (Blueprint)
+# ==============================================================================
+
+services:
+  - type: web
+    name: telecaller-crm
+    env: node
+    plan: free
+    region: singapore
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false

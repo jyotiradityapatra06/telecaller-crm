@@ -973,7 +973,7 @@ INSERT INTO leads (
   NULL,
   NULL,
   'UI/UX & Product Design',
-  NULL,
+  'usr_tc_vidya_002',
   'NEW',
   'Fresh web inquiry seeking Figma & Portfolio acceleration batch.',
   NULL,
@@ -1031,7 +1031,7 @@ INSERT INTO leads (
   NULL,
   NULL,
   'Full Stack Web Development',
-  NULL,
+  'usr_tc_dual_001',
   'NEW',
   'Inquired about internship guarantee and scholarship test.',
   NULL,
@@ -1669,7 +1669,7 @@ INSERT INTO leads (
   'Sector 150, Noida Expressway',
   '',
   '3 BHK Luxury Apartment (₹1.1 Cr - ₹1.4 Cr)',
-  NULL,
+  'usr_tc_estate_002',
   'NEW',
   'Inquired about golf-view premium towers with clubhouse amenities.',
   NULL,
@@ -1727,7 +1727,7 @@ INSERT INTO leads (
   'Golf Course Extension, Gurugram',
   '',
   'Commercial Retail / Food Court (₹75 Lakhs - ₹1 Cr)',
-  NULL,
+  'usr_tc_dual_001',
   'NEW',
   'Seeking pre-leased commercial property with guaranteed rental returns.',
   NULL,
@@ -1819,11 +1819,243 @@ ON CONFLICT (id) DO UPDATE SET
   total_calls_count = EXCLUDED.total_calls_count,
   updated_at = EXCLUDED.updated_at;
 
+INSERT INTO leads (
+  id, organization_id, name, phone, email, city, source, brand,
+  course_interest, qualification, preferred_batch,
+  property_type, budget, preferred_location, site_visit_date,
+  product_interest, assigned_to, status, notes,
+  last_call_at, last_call_timestamp, next_follow_up_at, total_calls_count,
+  created_at, updated_at
+) VALUES (
+  'lead_vidya_13',
+  'org_demo_001',
+  'Gaurav Chouhan',
+  '+91 98999 00112',
+  'gaurav.c@indoretech.com',
+  'Indore',
+  'Telegram Channel Ad',
+  'APNI_VIDYA',
+  'Full Stack Web Development',
+  'Working Professional (PHP Dev)',
+  'Fast-track Bootcamp',
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  'Full Stack Web Development',
+  NULL,
+  'NEW',
+  'Seeking Next.js + Microservices upgrade for senior dev promotion. Unassigned pool.',
+  NULL,
+  NULL,
+  NULL,
+  0,
+  '2026-08-09T04:18:13.549Z'::timestamptz,
+  '2026-08-09T04:18:13.549Z'::timestamptz
+)
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  phone = EXCLUDED.phone,
+  email = EXCLUDED.email,
+  city = EXCLUDED.city,
+  source = EXCLUDED.source,
+  brand = EXCLUDED.brand,
+  course_interest = EXCLUDED.course_interest,
+  qualification = EXCLUDED.qualification,
+  preferred_batch = EXCLUDED.preferred_batch,
+  property_type = EXCLUDED.property_type,
+  budget = EXCLUDED.budget,
+  preferred_location = EXCLUDED.preferred_location,
+  site_visit_date = EXCLUDED.site_visit_date,
+  product_interest = EXCLUDED.product_interest,
+  assigned_to = EXCLUDED.assigned_to,
+  status = EXCLUDED.status,
+  notes = EXCLUDED.notes,
+  last_call_at = EXCLUDED.last_call_at,
+  last_call_timestamp = EXCLUDED.last_call_timestamp,
+  next_follow_up_at = EXCLUDED.next_follow_up_at,
+  total_calls_count = EXCLUDED.total_calls_count,
+  updated_at = EXCLUDED.updated_at;
 
--- 4. Seed Initial Lead Assignments
+INSERT INTO leads (
+  id, organization_id, name, phone, email, city, source, brand,
+  course_interest, qualification, preferred_batch,
+  property_type, budget, preferred_location, site_visit_date,
+  product_interest, assigned_to, status, notes,
+  last_call_at, last_call_timestamp, next_follow_up_at, total_calls_count,
+  created_at, updated_at
+) VALUES (
+  'lead_vidya_14',
+  'org_demo_001',
+  'Ritika Sen',
+  '+91 98000 11223',
+  'ritika.sen@bhu.ac.in',
+  'Varanasi',
+  'Quora Question Link',
+  'APNI_VIDYA',
+  'Data Science & Generative AI',
+  'Graduate (M.Sc Statistics)',
+  'Weekend Intensive (Sat-Sun)',
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  'Data Science & Generative AI',
+  NULL,
+  'NEW',
+  'Strong math background. Wants Python for ML syllabus breakdown. Unassigned pool.',
+  NULL,
+  NULL,
+  NULL,
+  0,
+  '2026-08-08T04:18:13.549Z'::timestamptz,
+  '2026-08-08T04:18:13.549Z'::timestamptz
+)
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  phone = EXCLUDED.phone,
+  email = EXCLUDED.email,
+  city = EXCLUDED.city,
+  source = EXCLUDED.source,
+  brand = EXCLUDED.brand,
+  course_interest = EXCLUDED.course_interest,
+  qualification = EXCLUDED.qualification,
+  preferred_batch = EXCLUDED.preferred_batch,
+  property_type = EXCLUDED.property_type,
+  budget = EXCLUDED.budget,
+  preferred_location = EXCLUDED.preferred_location,
+  site_visit_date = EXCLUDED.site_visit_date,
+  product_interest = EXCLUDED.product_interest,
+  assigned_to = EXCLUDED.assigned_to,
+  status = EXCLUDED.status,
+  notes = EXCLUDED.notes,
+  last_call_at = EXCLUDED.last_call_at,
+  last_call_timestamp = EXCLUDED.last_call_timestamp,
+  next_follow_up_at = EXCLUDED.next_follow_up_at,
+  total_calls_count = EXCLUDED.total_calls_count,
+  updated_at = EXCLUDED.updated_at;
+
+INSERT INTO leads (
+  id, organization_id, name, phone, email, city, source, brand,
+  course_interest, qualification, preferred_batch,
+  property_type, budget, preferred_location, site_visit_date,
+  product_interest, assigned_to, status, notes,
+  last_call_at, last_call_timestamp, next_follow_up_at, total_calls_count,
+  created_at, updated_at
+) VALUES (
+  'lead_estate_13',
+  'org_demo_001',
+  'Sameer Khan',
+  '+91 99333 44556',
+  'sameer.k@khancorp.com',
+  'Hyderabad',
+  'MagicBricks Form',
+  'APNI_ESTATE',
+  NULL,
+  NULL,
+  NULL,
+  'Commercial Office Floor',
+  '₹5.0 Cr - ₹7.0 Cr',
+  'HITEC City, Hyderabad',
+  NULL,
+  'Commercial Office Floor',
+  NULL,
+  'NEW',
+  'Corporate buyer searching for 6,000 sq.ft grade-A office space. Unassigned pool.',
+  NULL,
+  NULL,
+  NULL,
+  0,
+  '2026-08-09T04:18:13.549Z'::timestamptz,
+  '2026-08-09T04:18:13.549Z'::timestamptz
+)
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  phone = EXCLUDED.phone,
+  email = EXCLUDED.email,
+  city = EXCLUDED.city,
+  source = EXCLUDED.source,
+  brand = EXCLUDED.brand,
+  course_interest = EXCLUDED.course_interest,
+  qualification = EXCLUDED.qualification,
+  preferred_batch = EXCLUDED.preferred_batch,
+  property_type = EXCLUDED.property_type,
+  budget = EXCLUDED.budget,
+  preferred_location = EXCLUDED.preferred_location,
+  site_visit_date = EXCLUDED.site_visit_date,
+  product_interest = EXCLUDED.product_interest,
+  assigned_to = EXCLUDED.assigned_to,
+  status = EXCLUDED.status,
+  notes = EXCLUDED.notes,
+  last_call_at = EXCLUDED.last_call_at,
+  last_call_timestamp = EXCLUDED.last_call_timestamp,
+  next_follow_up_at = EXCLUDED.next_follow_up_at,
+  total_calls_count = EXCLUDED.total_calls_count,
+  updated_at = EXCLUDED.updated_at;
+
+INSERT INTO leads (
+  id, organization_id, name, phone, email, city, source, brand,
+  course_interest, qualification, preferred_batch,
+  property_type, budget, preferred_location, site_visit_date,
+  product_interest, assigned_to, status, notes,
+  last_call_at, last_call_timestamp, next_follow_up_at, total_calls_count,
+  created_at, updated_at
+) VALUES (
+  'lead_estate_14',
+  'org_demo_001',
+  'Tanya Roy',
+  '+91 99444 55667',
+  'tanya.roy@gmail.com',
+  'Kolkata',
+  '99acres Lead Form',
+  'APNI_ESTATE',
+  NULL,
+  NULL,
+  NULL,
+  '3 BHK Lake-view Condo',
+  '₹75 Lakh - ₹95 Lakh',
+  'New Town Action Area 2, Kolkata',
+  NULL,
+  '3 BHK Lake-view Condo',
+  NULL,
+  'NEW',
+  'IT professional looking for south-facing balcony unit. Unassigned pool.',
+  NULL,
+  NULL,
+  NULL,
+  0,
+  '2026-08-08T04:18:13.549Z'::timestamptz,
+  '2026-08-08T04:18:13.549Z'::timestamptz
+)
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  phone = EXCLUDED.phone,
+  email = EXCLUDED.email,
+  city = EXCLUDED.city,
+  source = EXCLUDED.source,
+  brand = EXCLUDED.brand,
+  course_interest = EXCLUDED.course_interest,
+  qualification = EXCLUDED.qualification,
+  preferred_batch = EXCLUDED.preferred_batch,
+  property_type = EXCLUDED.property_type,
+  budget = EXCLUDED.budget,
+  preferred_location = EXCLUDED.preferred_location,
+  site_visit_date = EXCLUDED.site_visit_date,
+  product_interest = EXCLUDED.product_interest,
+  assigned_to = EXCLUDED.assigned_to,
+  status = EXCLUDED.status,
+  notes = EXCLUDED.notes,
+  last_call_at = EXCLUDED.last_call_at,
+  last_call_timestamp = EXCLUDED.last_call_timestamp,
+  next_follow_up_at = EXCLUDED.next_follow_up_at,
+  total_calls_count = EXCLUDED.total_calls_count,
+  updated_at = EXCLUDED.updated_at;
+
+
+-- 4. Seed Initial Lead Assignments (24 Active Lead Allocations)
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_005',
+  'asgn_demo_001',
   'org_demo_001',
   'lead_vidya_1',
   'usr_tc_vidya_001',
@@ -1835,7 +2067,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_006',
+  'asgn_demo_002',
   'org_demo_001',
   'lead_vidya_2',
   'usr_tc_vidya_001',
@@ -1847,7 +2079,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_007',
+  'asgn_demo_003',
   'org_demo_001',
   'lead_vidya_3',
   'usr_tc_vidya_001',
@@ -1859,7 +2091,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_008',
+  'asgn_demo_004',
   'org_demo_001',
   'lead_vidya_4',
   'usr_tc_vidya_001',
@@ -1871,7 +2103,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_009',
+  'asgn_demo_005',
   'org_demo_001',
   'lead_vidya_5',
   'usr_tc_vidya_001',
@@ -1883,7 +2115,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_010',
+  'asgn_demo_006',
   'org_demo_001',
   'lead_vidya_6',
   'usr_tc_vidya_002',
@@ -1895,7 +2127,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_011',
+  'asgn_demo_007',
   'org_demo_001',
   'lead_vidya_7',
   'usr_tc_vidya_002',
@@ -1907,7 +2139,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_012',
+  'asgn_demo_008',
   'org_demo_001',
   'lead_vidya_8',
   'usr_tc_vidya_002',
@@ -1919,7 +2151,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_013',
+  'asgn_demo_009',
   'org_demo_001',
   'lead_vidya_9',
   'usr_tc_vidya_002',
@@ -1931,7 +2163,31 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_016',
+  'asgn_demo_010',
+  'org_demo_001',
+  'lead_vidya_10',
+  'usr_tc_vidya_002',
+  'usr_admin_001',
+  'ASSIGNED',
+  '2026-08-12T04:18:13.549Z'::timestamptz
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
+VALUES (
+  'asgn_demo_011',
+  'org_demo_001',
+  'lead_vidya_11',
+  'usr_tc_dual_001',
+  'usr_admin_001',
+  'ASSIGNED',
+  '2026-08-11T04:18:13.549Z'::timestamptz
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
+VALUES (
+  'asgn_demo_012',
   'org_demo_001',
   'lead_vidya_12',
   'usr_tc_dual_001',
@@ -1943,7 +2199,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_017',
+  'asgn_demo_013',
   'org_demo_001',
   'lead_estate_1',
   'usr_tc_estate_001',
@@ -1955,7 +2211,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_018',
+  'asgn_demo_014',
   'org_demo_001',
   'lead_estate_2',
   'usr_tc_estate_001',
@@ -1967,7 +2223,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_019',
+  'asgn_demo_015',
   'org_demo_001',
   'lead_estate_3',
   'usr_tc_estate_001',
@@ -1979,7 +2235,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_020',
+  'asgn_demo_016',
   'org_demo_001',
   'lead_estate_4',
   'usr_tc_estate_001',
@@ -1991,7 +2247,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_021',
+  'asgn_demo_017',
   'org_demo_001',
   'lead_estate_5',
   'usr_tc_estate_001',
@@ -2003,7 +2259,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_022',
+  'asgn_demo_018',
   'org_demo_001',
   'lead_estate_6',
   'usr_tc_estate_002',
@@ -2015,7 +2271,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_023',
+  'asgn_demo_019',
   'org_demo_001',
   'lead_estate_7',
   'usr_tc_estate_002',
@@ -2027,7 +2283,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_024',
+  'asgn_demo_020',
   'org_demo_001',
   'lead_estate_8',
   'usr_tc_estate_002',
@@ -2039,7 +2295,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_025',
+  'asgn_demo_021',
   'org_demo_001',
   'lead_estate_9',
   'usr_tc_estate_002',
@@ -2051,7 +2307,31 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
-  'asgn_demo_028',
+  'asgn_demo_022',
+  'org_demo_001',
+  'lead_estate_10',
+  'usr_tc_estate_002',
+  'usr_admin_001',
+  'ASSIGNED',
+  '2026-08-13T04:18:13.549Z'::timestamptz
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
+VALUES (
+  'asgn_demo_023',
+  'org_demo_001',
+  'lead_estate_11',
+  'usr_tc_dual_001',
+  'usr_admin_001',
+  'ASSIGNED',
+  '2026-08-12T04:18:13.549Z'::timestamptz
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
+VALUES (
+  'asgn_demo_024',
   'org_demo_001',
   'lead_estate_12',
   'usr_tc_dual_001',
@@ -2390,6 +2670,36 @@ VALUES (
   280,
   'CALL',
   '2026-08-22T04:18:13.549Z'::timestamptz
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO call_activities (id, organization_id, lead_id, telecaller_id, status, note, called_at, duration_seconds, call_type, created_at)
+VALUES (
+  'call_lead_vidya_11_1',
+  'org_demo_001',
+  'lead_vidya_11',
+  'usr_tc_dual_001',
+  'INTERESTED',
+  'Discussed design portfolio review and career mentorship.',
+  '2026-08-22T22:18:13.549Z'::timestamptz,
+  280,
+  'CALL',
+  '2026-08-22T22:18:13.549Z'::timestamptz
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO call_activities (id, organization_id, lead_id, telecaller_id, status, note, called_at, duration_seconds, call_type, created_at)
+VALUES (
+  'call_lead_estate_11_1',
+  'org_demo_001',
+  'lead_estate_11',
+  'usr_tc_dual_001',
+  'INTERESTED',
+  'NRI buyer inquiry logged for Pune project.',
+  '2026-08-22T18:18:13.549Z'::timestamptz,
+  310,
+  'CALL',
+  '2026-08-22T18:18:13.549Z'::timestamptz
 )
 ON CONFLICT (id) DO NOTHING;
 
@@ -3498,6 +3808,30 @@ VALUES (
   'CREATED',
   'Lead imported for [Apni Estate] via spreadsheet batch.',
   '2026-08-24T04:20:18.879Z'::timestamptz
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO lead_history (id, organization_id, lead_id, user_id, action, description, timestamp)
+VALUES (
+  'hist_lead_vidya_13_0',
+  'org_demo_001',
+  'lead_vidya_13',
+  'usr_admin_001',
+  'CREATED',
+  'Lead registered from Telegram Channel Ad',
+  '2026-08-09T04:18:13.549Z'::timestamptz
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO lead_history (id, organization_id, lead_id, user_id, action, description, timestamp)
+VALUES (
+  'hist_lead_estate_13_0',
+  'org_demo_001',
+  'lead_estate_13',
+  'usr_admin_001',
+  'CREATED',
+  'Lead registered from MagicBricks Form',
+  '2026-08-09T04:18:13.549Z'::timestamptz
 )
 ON CONFLICT (id) DO NOTHING;
 

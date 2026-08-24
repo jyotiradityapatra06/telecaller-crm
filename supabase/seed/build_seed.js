@@ -149,12 +149,13 @@ ON CONFLICT (id) DO UPDATE SET
 `;
 });
 
-sql += `\n-- 4. Seed Initial Lead Assignments\n`;
+sql += `\n-- 4. Seed Initial Lead Assignments (24 Active Lead Allocations)\n`;
 
-db.leads.forEach((l, idx) => {
-  if (l.assignedTo) {
-    const asgnId = `asgn_demo_${String(idx + 1).padStart(3, '0')}`;
-    sql += `INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
+const assignedLeads = db.leads.filter(l => !!l.assignedTo);
+
+assignedLeads.forEach((l, idx) => {
+  const asgnId = `asgn_demo_${String(idx + 1).padStart(3, '0')}`;
+  sql += `INSERT INTO lead_assignments (id, organization_id, lead_id, assigned_to, assigned_by, assignment_type, created_at)
 VALUES (
   ${sqlStr(asgnId)},
   ${sqlStr(DEMO_ORG_ID)},
@@ -167,7 +168,6 @@ VALUES (
 ON CONFLICT (id) DO NOTHING;
 
 `;
-  }
 });
 
 sql += `\n-- 5. Seed Call Activities (22 Call Interactions)\n`;

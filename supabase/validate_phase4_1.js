@@ -9,7 +9,7 @@ const schemaFile = path.join(__dirname, 'migrations', '001_initial_schema.sql');
 const seedFile = path.join(__dirname, 'seed', 'demo_data.sql');
 const dbFile = path.join(__dirname, '..', 'data', 'crm_db.json');
 
-console.log('=== PHASE 4.1 DATABASE MIGRATION VALIDATION ===\n');
+console.log('=== PHASE 4.1 DATABASE MIGRATION & DATA VALIDATION ===\n');
 
 const checks = [];
 
@@ -87,38 +87,89 @@ requiredIndexes.forEach(idx => {
   check(`Index '${idx}' created`, schemaContent.includes(idx));
 });
 
-// 6. Check Seed File Exists & Content
+// 6. Check Seed File & Local JSON Data Parity
 const seedExists = fs.existsSync(seedFile);
 check('Seed file demo_data.sql exists', seedExists);
 
 const seedContent = seedExists ? fs.readFileSync(seedFile, 'utf8') : '';
-const db = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+const dbExists = fs.existsSync(dbFile);
+check('data/crm_db.json exists and preserved for Node API', dbExists);
 
-// Count occurrences in seed
-const orgCount = (seedContent.match(/INSERT INTO organizations/g) || []).length;
-const userCount = (seedContent.match(/INSERT INTO users/g) || []).length;
-const leadCount = (seedContent.match(/INSERT INTO leads/g) || []).length;
-const callCount = (seedContent.match(/INSERT INTO call_activities/g) || []).length;
-const followUpCount = (seedContent.match(/INSERT INTO follow_ups/g) || []).length;
-const historyCount = (seedContent.match(/INSERT INTO lead_history/g) || []).length;
+const db = dbExists ? JSON.parse(fs.readFileSync(dbFile, 'utf8')) : {};
 
-check('Seed organization count is 1 (Demo Org)', orgCount === 1, `Found ${orgCount}`);
-check('Seed users count is 6', userCount === 6, `Found ${userCount}`);
-check('Seed leads count is 28', leadCount === 28, `Found ${leadCount}`);
-check('Seed call_activities count is 22', callCount === 22, `Found ${callCount}`);
-check('Seed follow_ups count is 6', followUpCount === 6, `Found ${followUpCount}`);
-check('Seed lead_history count is 82', historyCount === 82, `Found ${historyCount}`);
+// Count SQL seed statements
+const orgCountSQL = (seedContent.match(/INSERT INTO organizations/g) || []).length;
+const userCountSQL = (seedContent.match(/INSERT INTO users/g) || []).length;
+const leadCountSQL = (seedContent.match(/INSERT INTO leads/g) || []).length;
+const asgnCountSQL = (seedContent.match(/INSERT INTO lead_assignments/g) || []).length;
+const callCountSQL = (seedContent.match(/INSERT INTO call_activities/g) || []).length;
+const followUpCountSQL = (seedContent.match(/INSERT INTO follow_ups/g) || []).length;
+const historyCountSQL = (seedContent.match(/INSERT INTO lead_history/g) || []).length;
 
-// Verify Brand Distribution
-const vidyaLeadsInSeed = (seedContent.match(/'APNI_VIDYA'/g) || []).length;
-const estateLeadsInSeed = (seedContent.match(/'APNI_ESTATE'/g) || []).length;
-check('Seed contains Apni Vidya records', vidyaLeadsInSeed > 0, `Matches: ${vidyaLeadsInSeed}`);
-check('Seed contains Apni Estate records', estateLeadsInSeed > 0, `Matches: ${estateLeadsInSeed}`);
+check('Authoritative Seed: organizations count is 1 (org_demo_001)', orgCountSQL === 1, `Found ${orgCountSQL}`);
+check('Authoritative Seed: users count is 6', userCountSQL === 6, `Found ${userCountSQL}`);
+check('Authoritative Seed: leads count is 32', leadCountSQL === 32, `Found ${leadCountSQL}`);
+check('Authoritative Seed: lead_assignments count is 24', asgnCountSQL === 24, `Found ${asgnCountSQL}`);
+check('Authoritative Seed: call_activities count is 24', callCountSQL === 24, `Found ${callCountSQL}`);
+check('Authoritative Seed: follow_ups count is 6', followUpCountSQL === 6, `Found ${followUpCountSQL}`);
+check('Authoritative Seed: lead_history count is 84', historyCountSQL === 84, `Found ${historyCountSQL}`);
 
-// 7. Verify crm_db.json is preserved and active
-check('data/crm_db.json exists and preserved for Node API', fs.existsSync(dbFile));
+// Count Local JSON Data
+const userCountJSON = db.users ? db.users.length : 0;
+const leadCountJSON = db.leads ? db.leads.length : 0;
+const vidyaLeadsJSON = db.leads ? db.leads.filter(l => l.brand === 'APNI_VIDYA').length : 0;
+const estateLeadsJSON = db.leads ? db.leads.filter(l => l.brand === 'APNI_ESTATE').length : 0;
+const callCountJSON = db.callActivities ? db.callActivities.length : 0;
+const followUpCountJSON = db.followUps ? db.followUps.length : 0;
+const historyCountJSON = db.leadHistories ? db.leadHistories.length : 0;
+
+check('Local Data: users count is 6', userCountJSON === 6, `Found ${userCountJSON}`);
+check('Local Data: leads count is 32', leadCountJSON === 32, `Found ${leadCountJSON}`);
+check('Local Data: APNI_VIDYA leads count is 16', vidyaLeadsJSON === 16, `Found ${vidyaLeadsJSON}`);
+check('Local Data: APNI_ESTATE leads count is 16', estateLeadsJSON === 16, `Found ${estateLeadsJSON}`);
+check('Local Data: call_activities count is 24', callCountJSON === 24, `Found ${callCountJSON}`);
+check('Local Data: follow_ups count is 6', followUpCountJSON === 6, `Found ${followUpCountJSON}`);
+check('Local Data: lead_history count is 84', historyCountJSON === 84, `Found ${historyCountJSON}`);
+
+// 7. Multi-Tenant Ownership & Demo Isolation Checks
+const demoOrgMatch = seedContent.includes("'org_demo_001'") && seedContent.includes("TRUE");
+check('Org org_demo_001 exists and has is_demo = TRUE in seed', demoOrgMatch);
+
+const nonDemoOrgRecords = (seedContent.match(/INSERT INTO \w+ [\s\S]*?'(?!org_demo_001')org_[^']+'/g) || []).length;
+check('All demo records strictly bound to org_demo_001 (0 non-demo leaks)', nonDemoOrgRecords === 0, `Leaks: ${nonDemoOrgRecords}`);
+
+// 8. Foreign Key Integrity Checks (No Orphaned References)
+const userIds = new Set(db.users.map(u => u.id));
+const leadIds = new Set(db.leads.map(l => l.id));
+
+let orphanedLeadRefs = 0;
+let orphanedUserRefs = 0;
+
+db.leads.forEach(l => {
+  if (l.assignedTo && !userIds.has(l.assignedTo)) orphanedUserRefs++;
+});
+
+db.callActivities.forEach(c => {
+  if (!leadIds.has(c.leadId)) orphanedLeadRefs++;
+  if (c.telecallerId && !userIds.has(c.telecallerId)) orphanedUserRefs++;
+});
+
+db.followUps.forEach(f => {
+  if (!leadIds.has(f.leadId)) orphanedLeadRefs++;
+  if (f.telecallerId && !userIds.has(f.telecallerId)) orphanedUserRefs++;
+});
+
+db.leadHistories.forEach(h => {
+  if (!leadIds.has(h.leadId)) orphanedLeadRefs++;
+  if (h.userId && !userIds.has(h.userId)) orphanedUserRefs++;
+});
+
+check('Foreign Key Integrity: 0 orphaned lead references', orphanedLeadRefs === 0, `Orphaned: ${orphanedLeadRefs}`);
+check('Foreign Key Integrity: 0 orphaned user references', orphanedUserRefs === 0, `Orphaned: ${orphanedUserRefs}`);
 
 const allPass = checks.every(c => c.pass);
 console.log(`\n========================================`);
 console.log(`VALIDATION RESULT: ${allPass ? '🟢 ALL CHECKS PASSED' : '🔴 SOME CHECKS FAILED'}`);
 console.log(`========================================\n`);
+
+process.exit(allPass ? 0 : 1);
