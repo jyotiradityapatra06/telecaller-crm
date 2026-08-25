@@ -43,6 +43,7 @@ export const registerAdminSchema = z
   });
 
 export const registerOwnerSchema = z.object({
+  organizationName: z.string().trim().min(1, 'Company / Organization Name is required').max(255),
   name: z.string().trim().min(1, 'Owner Name is required').max(255),
   loginId: z.string().trim().min(3, 'Login ID must be at least 3 characters long').max(50).regex(/^[a-zA-Z0-9_-]+$/, 'Login ID can only contain letters, numbers, hyphens, and underscores'),
   email: z.string().trim().email('Please enter a valid email address').max(255).optional().or(z.literal('')),

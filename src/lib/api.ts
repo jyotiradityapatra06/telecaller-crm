@@ -204,6 +204,7 @@ class ApiClient {
   }
 
   public registerOwner(payload: {
+    organizationName: string;
     name: string;
     loginId: string;
     email?: string;

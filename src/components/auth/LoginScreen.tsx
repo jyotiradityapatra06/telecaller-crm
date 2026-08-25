@@ -77,7 +77,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [demoAccounts, setDemoAccounts] = useState<DemoAccountItem[]>(isDevMode ? DEFAULT_DEMO_ACCOUNTS : []);
 
   // Admin Registration States
-  const [regCompanyName, setRegCompanyName] = useState<string>('');
+  const [regOrganizationName, setRegOrganizationName] = useState<string>('');
+  const [regOwnerName, setRegOwnerName] = useState<string>('');
   const [regLoginId, setRegLoginId] = useState<string>('');
   const [regPassword, setRegPassword] = useState<string>('');
   const [regConfirmPassword, setRegConfirmPassword] = useState<string>('');
@@ -177,10 +178,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
   const handleRegisterAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const name = regCompanyName.trim();
+    const organizationName = regOrganizationName.trim();
+    const name = regOwnerName.trim();
     const id = regLoginId.trim().toUpperCase();
     const pass = regPassword.trim();
     const confirm = regConfirmPassword.trim();
+
+    if (!organizationName) {
+      setRegError('Please enter the Company / Organization Name.');
+      soundManager.playError();
+      return;
+    }
 
     if (!name) {
       setRegError('Please enter the Owner Name.');
@@ -223,6 +231,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
     try {
       await api.registerOwner({
+        organizationName,
         name,
         loginId: id,
         password: pass,
@@ -238,6 +247,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
       setRegPassword('');
       setRegConfirmPassword('');
       setRegSetupCode('');
+      setRegOrganizationName('');
+      setRegOwnerName('');
       setRegistrationSuccess('Owner account created successfully.');
       setAuthMode('SIGN_IN');
     } catch (err: any) {
@@ -605,7 +616,28 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
                 {/* Admin Registration Form */}
                 <form onSubmit={handleRegisterAdmin} className="space-y-4">
-                  {/* Company / Admin Name */}
+                  <div>
+                    <label htmlFor="input-owner-reg-organization" className="text-xs font-semibold text-slate-300 block mb-1.5">
+                      Company / Organization Name *
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                        <Building2 className="w-4 h-4" />
+                      </div>
+                      <input
+                        type="text"
+                        id="input-owner-reg-organization"
+                        autoComplete="organization"
+                        value={regOrganizationName}
+                        onChange={(e) => setRegOrganizationName(e.target.value)}
+                        placeholder="Enter company name"
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[44px]"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Owner Name */}
                   <div>
                     <label className="text-xs font-semibold text-slate-300 block mb-1.5">
                       Owner Name *
@@ -618,8 +650,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                         type="text"
                         id="input-owner-reg-name"
                         autoComplete="name"
-                        value={regCompanyName}
-                        onChange={(e) => setRegCompanyName(e.target.value)}
+                        value={regOwnerName}
+                        onChange={(e) => setRegOwnerName(e.target.value)}
                         placeholder="Enter owner name"
                         className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[44px]"
                         required

@@ -17,7 +17,7 @@ const validOwnerSetupCode = (submittedCode: string): boolean => {
 
 // POST /api/auth/register-owner (code-gated registration into the existing CRM organization)
 authRouter.post('/register-owner', validateRequest(registerOwnerSchema), async (req, res: Response): Promise<void> => {
-  const { name, loginId, email, phone, password, setupCode } = req.body;
+  const { organizationName, name, loginId, email, phone, password, setupCode } = req.body;
   if (!validOwnerSetupCode(setupCode)) {
     res.status(403).json({ error: 'Invalid owner setup code.' });
     return;
@@ -26,7 +26,7 @@ authRouter.post('/register-owner', validateRequest(registerOwnerSchema), async (
   try {
     const cleanLoginId = loginId.trim().toUpperCase();
     const passwordHash = bcrypt.hashSync(password, 10);
-    const owner = await db.registerOwnerInExistingOrganization({ name, loginId: cleanLoginId, email, phone, passwordHash });
+    const owner = await db.registerOwnerWithOrganization({ organizationName, name, loginId: cleanLoginId, email, phone, passwordHash });
     res.status(201).json({ message: 'Owner account created successfully.', user: owner });
   } catch (err: any) {
     if (err.message?.includes('already exists')) {

@@ -370,7 +370,8 @@ export class DevFallbackRepository {
     return safeUser;
   }
 
-  public async registerOwnerInExistingOrganization(data: {
+  public async registerOwnerWithOrganization(data: {
+    organizationName: string;
     name: string;
     loginId: string;
     passwordHash: string;
@@ -378,14 +379,23 @@ export class DevFallbackRepository {
     email?: string;
   }): Promise<User> {
     this.ensureLoaded();
-    const activeOrganizations = this.organizations.filter((organization) => organization.isActive !== false);
-    if (activeOrganizations.length !== 1) throw new Error('Owner registration is not available for this CRM configuration.');
     const cleanId = data.loginId.trim().toUpperCase();
     if (await this.findUserByLoginId(cleanId)) throw new Error('Login ID already exists.');
     const now = new Date().toISOString();
+    const uniquePart = `${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 10)}`;
+    const organizationId = `org_${uniquePart}`;
+    const organization: Organization = {
+      id: organizationId,
+      name: data.organizationName.trim(),
+      slug: `${data.organizationName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'organization'}-${uniquePart}`,
+      isDemo: false,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    };
     const owner: User & { passwordHash: string } = {
-      id: `usr_owner_${Date.now().toString().slice(-6)}_${Math.random().toString(36).substring(2, 5)}`,
-      organizationId: activeOrganizations[0].id,
+      id: `usr_owner_${uniquePart}`,
+      organizationId,
       name: data.name.trim(),
       loginId: cleanId,
       role: 'OWNER',
@@ -398,8 +408,15 @@ export class DevFallbackRepository {
       createdAt: now,
       updatedAt: now,
     };
+    this.organizations.push(organization);
     this.users.push(owner);
-    this.persistToDisk();
+    try {
+      this.persistToDisk();
+    } catch (error) {
+      this.users = this.users.filter((user) => user.id !== owner.id);
+      this.organizations = this.organizations.filter((item) => item.id !== organizationId);
+      throw error;
+    }
     const { passwordHash: _, ...safeOwner } = owner;
     return safeOwner;
   }
