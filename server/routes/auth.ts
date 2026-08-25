@@ -1,10 +1,45 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import { timingSafeEqual } from 'crypto';
 import { db } from '../db';
 import { generateToken, sanitizeUser, requireAuth, AuthenticatedRequest } from '../auth';
-import { validateRequest, loginSchema, registerAdminSchema, changePasswordSchema } from '../middleware/validate';
+import { validateRequest, loginSchema, registerAdminSchema, registerOwnerSchema, changePasswordSchema } from '../middleware/validate';
 
 export const authRouter = Router();
+
+const validOwnerSetupCode = (submittedCode: string): boolean => {
+  const configuredCode = process.env.OWNER_REGISTRATION_CODE;
+  if (!configuredCode || !submittedCode) return false;
+  const configured = Buffer.from(configuredCode, 'utf8');
+  const submitted = Buffer.from(submittedCode, 'utf8');
+  return configured.length === submitted.length && timingSafeEqual(configured, submitted);
+};
+
+// POST /api/auth/register-owner (code-gated registration into the existing CRM organization)
+authRouter.post('/register-owner', validateRequest(registerOwnerSchema), async (req, res: Response): Promise<void> => {
+  const { name, loginId, email, phone, password, setupCode } = req.body;
+  if (!validOwnerSetupCode(setupCode)) {
+    res.status(403).json({ error: 'Invalid owner setup code.' });
+    return;
+  }
+
+  try {
+    const cleanLoginId = loginId.trim().toUpperCase();
+    if (await db.findUserByLoginId(cleanLoginId)) {
+      res.status(400).json({ error: 'Login ID already exists.' });
+      return;
+    }
+    const passwordHash = bcrypt.hashSync(password, 10);
+    const owner = await db.registerOwnerInExistingOrganization({ name, loginId: cleanLoginId, email, phone, passwordHash });
+    res.status(201).json({ message: 'Owner account created successfully.', user: owner });
+  } catch (err: any) {
+    if (err.message?.includes('already exists')) {
+      res.status(400).json({ error: 'Login ID already exists.' });
+      return;
+    }
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Unable to create owner account.' : err.message || 'Unable to create owner account.' });
+  }
+});
 
 // POST /api/auth/register (Company / Admin Self-Registration)
 authRouter.post('/register', validateRequest(registerAdminSchema), async (req, res: Response): Promise<void> => {

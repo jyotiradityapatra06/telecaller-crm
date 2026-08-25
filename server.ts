@@ -111,6 +111,14 @@ async function startServer() {
     legacyHeaders: false,
   });
 
+  const ownerRegistrationLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: process.env.NODE_ENV === 'production' ? 10 : 100,
+    message: { error: 'Too many owner registration attempts. Please try again after 15 minutes.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
   const importLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 10,
@@ -130,6 +138,7 @@ async function startServer() {
   // Apply rate limiters to sensitive endpoints
   app.use('/api/auth/login', authLimiter);
   app.use('/api/auth/register', authLimiter);
+  app.use('/api/auth/register-owner', ownerRegistrationLimiter);
   app.use('/api/auth/password', authLimiter);
   app.use('/api/admin/leads/import', importLimiter);
   app.use('/api/telecaller/calls', mutationLimiter);

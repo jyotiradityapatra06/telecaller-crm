@@ -42,6 +42,10 @@ class DatabaseAdapter {
     return dbRepository.registerAdmin(data);
   }
 
+  public registerOwnerInExistingOrganization(data: any) {
+    return dbRepository.registerOwnerInExistingOrganization(data);
+  }
+
   public getHrs(user: any) { return dbRepository.getHrs(user); }
   public createHr(data: any, user: any) { return dbRepository.createHr(data, user); }
   public updateHr(id: string, data: any, user: any) { return dbRepository.updateHr(id, data, user); }

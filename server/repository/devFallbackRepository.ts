@@ -370,6 +370,40 @@ export class DevFallbackRepository {
     return safeUser;
   }
 
+  public async registerOwnerInExistingOrganization(data: {
+    name: string;
+    loginId: string;
+    passwordHash: string;
+    phone?: string;
+    email?: string;
+  }): Promise<User> {
+    this.ensureLoaded();
+    const activeOrganizations = this.organizations.filter((organization) => organization.isActive !== false);
+    if (activeOrganizations.length !== 1) throw new Error('Owner registration is not available for this CRM configuration.');
+    const cleanId = data.loginId.trim().toUpperCase();
+    if (await this.findUserByLoginId(cleanId)) throw new Error('Login ID already exists.');
+    const now = new Date().toISOString();
+    const owner: User & { passwordHash: string } = {
+      id: `usr_owner_${Date.now().toString().slice(-6)}_${Math.random().toString(36).substring(2, 5)}`,
+      organizationId: activeOrganizations[0].id,
+      name: data.name.trim(),
+      loginId: cleanId,
+      role: 'OWNER',
+      brandAccess: 'BOTH',
+      dailyTarget: 100,
+      phone: data.phone?.trim() || '',
+      email: data.email?.trim() || '',
+      isActive: true,
+      passwordHash: data.passwordHash,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.users.push(owner);
+    this.persistToDisk();
+    const { passwordHash: _, ...safeOwner } = owner;
+    return safeOwner;
+  }
+
   private generateNextLoginId(brandAccess: BrandAccess, _adminUser?: User): string {
     const prefix =
       brandAccess === 'APNI_VIDYA'

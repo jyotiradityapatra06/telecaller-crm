@@ -83,10 +83,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [regConfirmPassword, setRegConfirmPassword] = useState<string>('');
   const [regPhone, setRegPhone] = useState<string>('');
   const [regEmail, setRegEmail] = useState<string>('');
+  const [regSetupCode, setRegSetupCode] = useState<string>('');
   const [regShowPassword, setRegShowPassword] = useState<boolean>(false);
   const [regShowConfirmPassword, setRegShowConfirmPassword] = useState<boolean>(false);
   const [regIsLoading, setRegIsLoading] = useState<boolean>(false);
   const [regError, setRegError] = useState<string | null>(null);
+  const [registrationSuccess, setRegistrationSuccess] = useState<string | null>(null);
 
   // Fetch real demo accounts from server on mount only in dev mode
   useEffect(() => {
@@ -181,13 +183,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     const confirm = regConfirmPassword.trim();
 
     if (!name) {
-      setRegError('Please enter your Company or Admin Name.');
+      setRegError('Please enter the Owner Name.');
       soundManager.playError();
       return;
     }
 
     if (!id || id.length < 3) {
-      setRegError('Admin Login ID must be at least 3 characters long.');
+      setRegError('Login ID must be at least 3 characters long.');
       soundManager.playError();
       return;
     }
@@ -210,21 +212,34 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
       return;
     }
 
+    if (!regSetupCode.trim()) {
+      setRegError('Please enter the Owner Setup Code.');
+      soundManager.playError();
+      return;
+    }
+
     setRegIsLoading(true);
     setRegError(null);
 
     try {
-      const res = await api.registerAdmin({
-        companyName: name,
+      await api.registerOwner({
+        name,
         loginId: id,
         password: pass,
-        confirmPassword: confirm,
+        setupCode: regSetupCode,
         phone: regPhone.trim() || undefined,
         email: regEmail.trim() || undefined,
       });
 
       soundManager.playSuccess();
-      onLoginSuccess(res.user);
+      setLoginId(id);
+      setPassword('');
+      setRoleTab('MANAGEMENT');
+      setRegPassword('');
+      setRegConfirmPassword('');
+      setRegSetupCode('');
+      setRegistrationSuccess('Owner account created successfully.');
+      setAuthMode('SIGN_IN');
     } catch (err: any) {
       setRegError(err.message || 'Unable to register company account. Please try again.');
       soundManager.playError();
@@ -411,6 +426,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     <span>{error}</span>
                   </div>
                 )}
+                {registrationSuccess && (
+                  <div className="mb-5 p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2.5">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>{registrationSuccess}</span>
+                  </div>
+                )}
 
                 {/* Sign In Form */}
                 <form onSubmit={handleLogin} className="space-y-4">
@@ -486,8 +507,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 </form>
 
                 {/* Company Account Creation Link */}
-                {isDevMode && <div className="mt-5 pt-4 border-t border-slate-800 text-center">
-                  <span className="text-xs text-slate-400 block mb-1">Don't have a company account?</span>
+                {roleTab === 'MANAGEMENT' && <div className="mt-5 pt-4 border-t border-slate-800 text-center">
+                  <span className="text-xs text-slate-400 block mb-1">Setting up the company for the first time?</span>
                   <button
                     type="button"
                     id="btn-switch-to-register-admin"
@@ -495,7 +516,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer inline-flex items-center gap-1.5"
                   >
                     <Shield className="w-3.5 h-3.5" />
-                    <span>Create Development Owner Account</span>
+                    <span>Create Owner Account</span>
                   </button>
                 </div>}
 
@@ -560,14 +581,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 <div className="mb-6">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
-                      <Shield className="w-3 h-3" /> Master Company Admin
+                      <Shield className="w-3 h-3" /> Secure Owner Setup
                     </span>
                   </div>
                   <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-                    Create Company Account
+                    Create Owner Account
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-400 mt-1">
-                    Set up your organization to manage telecalling operations
+                    Create an owner login for this CRM organization
                   </p>
                 </div>
 
@@ -587,7 +608,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                   {/* Company / Admin Name */}
                   <div>
                     <label className="text-xs font-semibold text-slate-300 block mb-1.5">
-                      Company / Admin Name *
+                      Owner Name *
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
@@ -595,10 +616,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                       </div>
                       <input
                         type="text"
-                        id="input-admin-reg-company"
+                        id="input-owner-reg-name"
+                        autoComplete="name"
                         value={regCompanyName}
                         onChange={(e) => setRegCompanyName(e.target.value)}
-                        placeholder="e.g. Apex Global Corp"
+                        placeholder="Enter owner name"
                         className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[44px]"
                         required
                       />
@@ -608,7 +630,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                   {/* Admin Login ID */}
                   <div>
                     <label className="text-xs font-semibold text-slate-300 block mb-1.5">
-                      Desired Admin Login ID * <span className="text-slate-500 font-normal">(letters, numbers, _)</span>
+                      Login ID * <span className="text-slate-500 font-normal">(letters, numbers, _)</span>
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 font-mono text-xs">
@@ -617,6 +639,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                       <input
                         type="text"
                         id="input-admin-reg-loginid"
+                        autoComplete="username"
                         value={regLoginId}
                         onChange={(e) => setRegLoginId(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))}
                         placeholder="e.g. APEX_OWNER"
@@ -638,9 +661,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                       <input
                         type={regShowPassword ? 'text' : 'password'}
                         id="input-admin-reg-password"
+                        autoComplete="new-password"
                         value={regPassword}
                         onChange={(e) => setRegPassword(e.target.value)}
-                        placeholder="Create strong admin password"
+                        placeholder="Create a strong password"
                         className="w-full pl-10 pr-11 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[44px]"
                         required
                         minLength={8}
@@ -669,9 +693,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                       <input
                         type={regShowConfirmPassword ? 'text' : 'password'}
                         id="input-admin-reg-confirm-password"
+                        autoComplete="new-password"
                         value={regConfirmPassword}
                         onChange={(e) => setRegConfirmPassword(e.target.value)}
-                        placeholder="Re-enter admin password"
+                        placeholder="Re-enter password"
                         className="w-full pl-10 pr-11 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[44px]"
                         required
                         minLength={8}
@@ -688,6 +713,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     </div>
                   </div>
 
+                  <div>
+                    <label htmlFor="input-owner-setup-code" className="text-xs font-semibold text-slate-300 block mb-1.5">
+                      Owner Setup Code *
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <input
+                        type="password"
+                        id="input-owner-setup-code"
+                        autoComplete="off"
+                        value={regSetupCode}
+                        onChange={(e) => setRegSetupCode(e.target.value)}
+                        placeholder="Enter private setup code"
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[44px]"
+                        required
+                      />
+                    </div>
+                  </div>
+
                   {/* Optional Contact Fields */}
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -696,6 +742,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                       </label>
                       <input
                         type="text"
+                        autoComplete="tel"
                         value={regPhone}
                         onChange={(e) => setRegPhone(e.target.value)}
                         placeholder="+91 98765 43210"
@@ -708,6 +755,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                       </label>
                       <input
                         type="email"
+                        autoComplete="email"
                         value={regEmail}
                         onChange={(e) => setRegEmail(e.target.value)}
                         placeholder="admin@company.com"
@@ -724,10 +772,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     className="w-full py-3.5 px-4 rounded-xl text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 shadow-lg shadow-indigo-600/30 active:scale-98 transition-all cursor-pointer min-h-[48px] disabled:opacity-60"
                   >
                     {regIsLoading ? (
-                      <span>Creating Company Account...</span>
+                      <span>Creating Owner Account...</span>
                     ) : (
                       <>
-                        <span>Register Company & Enter CRM</span>
+                        <span>Create Owner Account</span>
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}
@@ -742,7 +790,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     onClick={() => switchMode('SIGN_IN')}
                     className="text-xs text-slate-400 hover:text-white font-semibold transition-colors cursor-pointer"
                   >
-                    Already have an account? <span className="text-indigo-400 underline">Sign In instead</span>
+                    ← Back to Sign In
                   </button>
                 </div>
               </>

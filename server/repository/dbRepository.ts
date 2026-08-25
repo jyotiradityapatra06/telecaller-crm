@@ -216,6 +216,43 @@ export class DbRepository {
     return safeUser;
   }
 
+  public async registerOwnerInExistingOrganization(data: {
+    name: string;
+    loginId: string;
+    passwordHash: string;
+    phone?: string;
+    email?: string;
+  }): Promise<User> {
+    if (this.useFallback) return this.fallbackRepo.registerOwnerInExistingOrganization(data);
+    const { data: organizations, error: organizationError } = await this.client.from('organizations').select('id').eq('is_active', true).limit(2);
+    if (organizationError || !organizations || organizations.length !== 1) throw new Error('Owner registration is not available for this CRM configuration.');
+    const cleanId = data.loginId.trim().toUpperCase();
+    if (await this.findUserByLoginId(cleanId)) throw new Error('Login ID already exists.');
+    const now = new Date().toISOString();
+    const owner: User & { passwordHash: string } = {
+      id: `usr_owner_${Date.now().toString().slice(-6)}_${Math.random().toString(36).substring(2, 5)}`,
+      organizationId: organizations[0].id,
+      name: data.name.trim(),
+      loginId: cleanId,
+      role: 'OWNER',
+      brandAccess: 'BOTH',
+      dailyTarget: 100,
+      phone: data.phone?.trim() || '',
+      email: data.email?.trim() || '',
+      isActive: true,
+      passwordHash: data.passwordHash,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const { error } = await this.client.from('users').insert(mapUserToRow(owner, owner.organizationId!));
+    if (error) {
+      if (error.code === '23505' || error.message?.toLowerCase().includes('duplicate')) throw new Error('Login ID already exists.');
+      throw new Error('Unable to create owner account.');
+    }
+    const { passwordHash: _, ...safeOwner } = owner;
+    return safeOwner;
+  }
+
   public async getHrs(owner: User): Promise<User[]> {
     if (this.useFallback) return this.fallbackRepo.getHrs(owner);
     if (owner.role !== 'OWNER') throw new Error('Forbidden: Owner authorization required.');

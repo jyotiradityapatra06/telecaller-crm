@@ -42,6 +42,15 @@ export const registerAdminSchema = z
     path: ['confirmPassword'],
   });
 
+export const registerOwnerSchema = z.object({
+  name: z.string().trim().min(1, 'Owner Name is required').max(255),
+  loginId: z.string().trim().min(3, 'Login ID must be at least 3 characters long').max(50).regex(/^[a-zA-Z0-9_-]+$/, 'Login ID can only contain letters, numbers, hyphens, and underscores'),
+  email: z.string().trim().email('Please enter a valid email address').max(255).optional().or(z.literal('')),
+  phone: z.string().trim().max(50).optional(),
+  password: z.string().min(8, 'Password must be at least 8 characters long').max(255),
+  setupCode: z.string().max(255).optional().default(''),
+});
+
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required').max(255),
   newPassword: z.string().min(8, 'New password must be at least 8 characters long').max(255),

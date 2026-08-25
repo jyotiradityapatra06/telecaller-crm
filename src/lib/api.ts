@@ -203,6 +203,20 @@ class ApiClient {
     return data;
   }
 
+  public registerOwner(payload: {
+    name: string;
+    loginId: string;
+    email?: string;
+    phone?: string;
+    password: string;
+    setupCode: string;
+  }): Promise<{ message: string; user: AuthUser }> {
+    return this.request('/api/auth/register-owner', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   public async login(
     loginId: string,
     password: string
