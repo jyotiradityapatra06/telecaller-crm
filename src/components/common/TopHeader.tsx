@@ -69,50 +69,52 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
       {/* Action Controls */}
       <div className="flex items-center gap-1.5 sm:gap-2">
-        {/* Quick User Switch Dropdown */}
-        <div className="flex items-center gap-1 bg-slate-900 px-2 py-1.5 rounded-xl border border-slate-800">
-          <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          <select
-            value={currentUser.loginId}
-            onChange={(e) => {
-              soundManager.playTap();
-              onSwitchUser(e.target.value);
-            }}
-            className="bg-transparent text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer max-w-[110px] sm:max-w-[170px] truncate"
-            aria-label="Switch User Role"
-          >
-            <option value="admin" className="bg-slate-900 text-indigo-300">
-              🛡️ Master Admin
-            </option>
-            <optgroup label="🎓 Apni Vidya" className="bg-slate-900 text-slate-400">
-              {allTelecallers
-                .filter((tc) => tc.brandAccess === 'APNI_VIDYA')
-                .map((tc) => (
-                  <option key={tc.id} value={tc.loginId} className="bg-slate-900 text-white">
-                    🎓 {tc.name}
-                  </option>
-                ))}
-            </optgroup>
-            <optgroup label="🏢 Apni Estate" className="bg-slate-900 text-slate-400">
-              {allTelecallers
-                .filter((tc) => tc.brandAccess === 'APNI_ESTATE')
-                .map((tc) => (
-                  <option key={tc.id} value={tc.loginId} className="bg-slate-900 text-white">
-                    🏢 {tc.name}
-                  </option>
-                ))}
-            </optgroup>
-            <optgroup label="🌐 Dual Brand" className="bg-slate-900 text-slate-400">
-              {allTelecallers
-                .filter((tc) => tc.brandAccess === 'BOTH')
-                .map((tc) => (
-                  <option key={tc.id} value={tc.loginId} className="bg-slate-900 text-white">
-                    🌐 {tc.name}
-                  </option>
-                ))}
-            </optgroup>
-          </select>
-        </div>
+        {/* Quick User Switch Dropdown (Development Testing Only) */}
+        {import.meta.env.DEV && (
+          <div className="flex items-center gap-1 bg-slate-900 px-2 py-1.5 rounded-xl border border-slate-800">
+            <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <select
+              value={currentUser.loginId}
+              onChange={(e) => {
+                soundManager.playTap();
+                onSwitchUser(e.target.value);
+              }}
+              className="bg-transparent text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer max-w-[110px] sm:max-w-[170px] truncate"
+              aria-label="Switch User Role"
+            >
+              <option value="admin" className="bg-slate-900 text-indigo-300">
+                🛡️ Master Admin
+              </option>
+              <optgroup label="🎓 Apni Vidya" className="bg-slate-900 text-slate-400">
+                {allTelecallers
+                  .filter((tc) => tc.brandAccess === 'APNI_VIDYA')
+                  .map((tc) => (
+                    <option key={tc.id} value={tc.loginId} className="bg-slate-900 text-white">
+                      🎓 {tc.name}
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="🏢 Apni Estate" className="bg-slate-900 text-slate-400">
+                {allTelecallers
+                  .filter((tc) => tc.brandAccess === 'APNI_ESTATE')
+                  .map((tc) => (
+                    <option key={tc.id} value={tc.loginId} className="bg-slate-900 text-white">
+                      🏢 {tc.name}
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="🌐 Dual Brand" className="bg-slate-900 text-slate-400">
+                {allTelecallers
+                  .filter((tc) => tc.brandAccess === 'BOTH')
+                  .map((tc) => (
+                    <option key={tc.id} value={tc.loginId} className="bg-slate-900 text-white">
+                      🌐 {tc.name}
+                    </option>
+                  ))}
+              </optgroup>
+            </select>
+          </div>
+        )}
 
         {/* Audio FX Toggle */}
         <button

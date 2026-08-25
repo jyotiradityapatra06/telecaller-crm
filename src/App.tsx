@@ -92,8 +92,11 @@ export default function App() {
     fetchData();
   };
 
-  // Quick switch user / role
+  // Quick switch user / role (Development Testing Only)
   const handleQuickSwitchUser = async (targetLoginId: string) => {
+    if (!import.meta.env.DEV) {
+      return;
+    }
     try {
       const pass = targetLoginId === 'admin' ? 'admin123' : 'password123';
       const res = await api.login(targetLoginId, pass);

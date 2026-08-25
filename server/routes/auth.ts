@@ -91,8 +91,13 @@ authRouter.get('/me', requireAuth, (req: AuthenticatedRequest, res: Response): v
   res.json({ user: sanitizeUser(req.user) });
 });
 
-// GET /api/auth/demo-accounts
+// GET /api/auth/demo-accounts (Strictly disabled in production)
 authRouter.get('/demo-accounts', async (_req, res: Response): Promise<void> => {
+  if (process.env.NODE_ENV === 'production') {
+    res.status(404).json({ error: 'Endpoint not found.' });
+    return;
+  }
+
   try {
     const telecallers = await db.getTelecallers();
     res.json({
@@ -107,14 +112,14 @@ authRouter.get('/demo-accounts', async (_req, res: Response): Promise<void> => {
       })),
     });
   } catch (err: any) {
-    const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to fetch demo accounts.';
-    res.status(500).json({ error: errorMsg });
+    res.status(500).json({ error: err.message || 'Failed to fetch demo accounts.' });
   }
 });
 
-// PATCH /api/auth/password
+// PATCH /api/auth/password (Organization-context verified password update)
 authRouter.patch('/password', requireAuth, validateRequest(changePasswordSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { currentPassword, newPassword } = req.body;
+  const user = req.user!;
 
   if (newPassword.length < 8) {
     res.status(400).json({ error: 'New password must be at least 8 characters long.' });
@@ -122,7 +127,7 @@ authRouter.patch('/password', requireAuth, validateRequest(changePasswordSchema)
   }
 
   try {
-    const userWithHash = await db.findUserById(req.user!.id);
+    const userWithHash = await db.findUserById(user.id, user);
     if (!userWithHash) {
       res.status(404).json({ error: 'User account not found.' });
       return;
@@ -137,7 +142,7 @@ authRouter.patch('/password', requireAuth, validateRequest(changePasswordSchema)
     const salt = bcrypt.genSaltSync(10);
     const newHash = bcrypt.hashSync(newPassword, salt);
 
-    await db.updateUserPassword(req.user!.id, newHash);
+    await db.updateUserPassword(user.id, newHash, user);
     res.json({ message: 'Password updated successfully.' });
   } catch (err: any) {
     const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to update password.';

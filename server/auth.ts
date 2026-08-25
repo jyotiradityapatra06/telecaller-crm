@@ -4,8 +4,12 @@ import { dbRepository } from './repository/dbRepository';
 import { User, UserRole, AuthUser, BrandAccess } from '../src/types';
 
 if (process.env.NODE_ENV === 'production') {
-  if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'telecaller-crm-super-secure-jwt-secret-key-2026') {
-    throw new Error('FATAL: A custom JWT_SECRET environment variable must be provided in production mode.');
+  if (
+    !process.env.JWT_SECRET ||
+    process.env.JWT_SECRET.length < 32 ||
+    process.env.JWT_SECRET === 'telecaller-crm-super-secure-jwt-secret-key-2026'
+  ) {
+    throw new Error('FATAL: A custom JWT_SECRET of at least 32 characters must be provided in production mode.');
   }
 }
 
@@ -25,13 +29,16 @@ export interface AuthenticatedRequest extends Request {
 }
 
 export function generateToken(user: User): string {
+  if (!user.organizationId) {
+    throw new Error('Cannot generate token: user organization ID is required.');
+  }
   const payload: TokenPayload = {
     userId: user.id,
     loginId: user.loginId,
     role: user.role,
     brandAccess: user.brandAccess || 'BOTH',
     name: user.name,
-    organizationId: user.organizationId || 'org_demo_001',
+    organizationId: user.organizationId,
   };
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 }
@@ -51,7 +58,7 @@ export function sanitizeUser(user: User): AuthUser {
     loginId: user.loginId,
     role: user.role,
     brandAccess: user.brandAccess || 'BOTH',
-    organizationId: user.organizationId || 'org_demo_001',
+    organizationId: user.organizationId,
     dailyTarget: user.dailyTarget,
     phone: user.phone,
     email: user.email,
@@ -70,7 +77,7 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     const token = authHeader.split(' ')[1];
     const payload = verifyToken(token);
 
-    if (!payload) {
+    if (!payload || !payload.userId || !payload.organizationId) {
       res.status(401).json({ error: 'Unauthorized: Invalid or expired session token' });
       return;
     }
@@ -78,6 +85,12 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     const user = await dbRepository.findUserById(payload.userId);
     if (!user) {
       res.status(401).json({ error: 'Unauthorized: User account not found' });
+      return;
+    }
+
+    // Strict cross-organization boundary validation
+    if (user.organizationId !== payload.organizationId) {
+      res.status(401).json({ error: 'Unauthorized: Organization context mismatch' });
       return;
     }
 

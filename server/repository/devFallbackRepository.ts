@@ -20,10 +20,6 @@ import {
 // DEVELOPMENT-ONLY LOCAL REPOSITORY FALLBACK
 // STRICT SECURITY GUARD: NEVER RUN IN PRODUCTION
 // ============================================================================
-if (process.env.NODE_ENV === 'production') {
-  throw new Error('FATAL: Development fallback repository cannot be initialized in production environment.');
-}
-
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'crm_db.json');
 
@@ -38,10 +34,13 @@ export class DevFallbackRepository {
   private initialized = false;
 
   constructor() {
-    this.ensureLoaded();
+    // Passive constructor with no top-level side effects during module evaluation
   }
 
   private ensureLoaded(): void {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL: Development fallback repository is strictly disabled in production environment.');
+    }
     if (this.initialized) return;
     this.loadFromDisk();
     this.initialized = true;
@@ -52,7 +51,7 @@ export class DevFallbackRepository {
       const userOrg = user.organizationId || (user as any).organization_id;
       if (userOrg) return userOrg;
     }
-    throw new Error('Unauthorized: Organization tenant context required for authenticated requests.');
+    throw new Error('Unauthorized: Organization context required for authenticated CRM operations.');
   }
 
   // --- DISK STORAGE PERSISTENCE ENGINE ---
@@ -560,8 +559,14 @@ export class DevFallbackRepository {
 
   public async updateUserPassword(userId: string, newHash: string, userContext?: User): Promise<void> {
     this.ensureLoaded();
-    const orgId = userContext ? this.getOrganizationId(userContext) : undefined;
-    const user = this.users.find((u) => u.id === userId && (!orgId || u.organizationId === orgId));
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to update user password.');
+    }
+    const orgId = this.getOrganizationId(userContext);
+    if (userContext.role !== 'ADMIN' && userContext.id !== userId) {
+      throw new Error('Forbidden: You can only update your own password.');
+    }
+    const user = this.users.find((u) => u.id === userId && u.organizationId === orgId);
     if (!user) throw new Error('User not found.');
     user.passwordHash = newHash;
     user.updatedAt = new Date().toISOString();
@@ -574,6 +579,9 @@ export class DevFallbackRepository {
     userContext?: User
   ): Promise<Lead[]> {
     this.ensureLoaded();
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to retrieve leads.');
+    }
     const orgId = this.getOrganizationId(userContext);
     let result = this.leads.filter((l) => l.organizationId === orgId);
 
@@ -627,6 +635,9 @@ export class DevFallbackRepository {
 
   public async getLeadById(id: string, userContext?: User): Promise<Lead | undefined> {
     this.ensureLoaded();
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to retrieve lead.');
+    }
     const orgId = this.getOrganizationId(userContext);
     const lead = this.leads.find((l) => l.id === id && l.organizationId === orgId);
     if (!lead) return undefined;
@@ -1057,6 +1068,9 @@ export class DevFallbackRepository {
     userContext?: User
   ): Promise<{ overdue: FollowUp[]; today: FollowUp[]; upcoming: FollowUp[]; completed: FollowUp[] }> {
     this.ensureLoaded();
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to fetch follow-ups.');
+    }
     this.recalculateFollowUpStatuses();
     const orgId = this.getOrganizationId(userContext);
 
@@ -1089,6 +1103,9 @@ export class DevFallbackRepository {
 
   public async getLeadHistory(leadId: string, userContext?: User): Promise<{ lead: Lead; history: LeadHistory[] }> {
     this.ensureLoaded();
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to fetch lead history.');
+    }
     const orgId = this.getOrganizationId(userContext);
     const lead = this.leads.find((l) => l.id === leadId && l.organizationId === orgId);
     if (!lead) throw new Error(`Lead not found with ID: ${leadId}`);
@@ -1111,6 +1128,9 @@ export class DevFallbackRepository {
   // --- PERFORMANCE METRICS ---
   public async getAdminMetrics(brandFilter?: 'ALL' | BusinessBrand, userContext?: User): Promise<AdminMetrics> {
     this.ensureLoaded();
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to fetch admin metrics.');
+    }
     this.recalculateFollowUpStatuses();
     const orgId = this.getOrganizationId(userContext);
 
@@ -1140,19 +1160,22 @@ export class DevFallbackRepository {
     const callsToday = filteredCalls.filter((c) => c.calledAt && c.calledAt.startsWith(todayStr)).length;
 
     const activeTelecallers = this.users.filter((u) => u.organizationId === orgId && u.role === 'TELECALLER' && u.isActive).length;
+
+    const enrolledCount = filteredLeads.filter((l) => l.status === 'ENROLLED').length;
+    const closedCount = filteredLeads.filter((l) => l.status === 'CLOSED').length;
+    const totalConversions = enrolledCount + closedCount;
+
+    const conversionRate = totalLeads > 0 ? Math.round((totalConversions / totalLeads) * 100) : 0;
+    const vidyaConversionRate = vidyaLeads.length > 0 ? Math.round((enrolledCount / vidyaLeads.length) * 100) : 0;
+    const estateConversionRate = estateLeads.length > 0 ? Math.round((closedCount / estateLeads.length) * 100) : 0;
+
+    const pendingFollowUps = filteredFollowUps.filter((f) => !f.isCompleted && f.status !== 'COMPLETED');
+
     const todayTarget = this.users
       .filter((u) => u.organizationId === orgId && u.role === 'TELECALLER' && u.isActive)
       .reduce((sum, u) => sum + (u.dailyTarget || 50), 0);
 
     const targetCompletion = todayTarget > 0 ? Math.min(100, Math.round((callsToday / todayTarget) * 100)) : 0;
-
-    const vidyaConverted = vidyaLeads.filter((l) => l.status === 'ENROLLED' || l.status === 'DEMO').length;
-    const vidyaConversionRate = vidyaLeads.length > 0 ? Math.round((vidyaConverted / vidyaLeads.length) * 100) : 0;
-
-    const estateConverted = estateLeads.filter((l) => l.status === 'CLOSED' || l.status === 'SITE_VISIT_SCHEDULED').length;
-    const estateConversionRate = estateLeads.length > 0 ? Math.round((estateConverted / estateLeads.length) * 100) : 0;
-
-    const pendingFollowUps = filteredFollowUps.filter((f) => !f.isCompleted && f.status !== 'COMPLETED');
 
     return {
       totalLeads,
@@ -1202,6 +1225,9 @@ export class DevFallbackRepository {
 
   public async getTelecallerMetrics(telecallerId: string, userContext?: User): Promise<TelecallerMetrics> {
     this.ensureLoaded();
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to fetch telecaller metrics.');
+    }
     const orgId = this.getOrganizationId(userContext);
     const tc = this.users.find((u) => u.organizationId === orgId && (u.id === telecallerId || u.loginId === telecallerId));
     const assignedLeadsList = this.leads.filter((l) => l.organizationId === orgId && (l.assignedTo === telecallerId || l.assignedTo === tc?.id));
@@ -1243,4 +1269,20 @@ export class DevFallbackRepository {
   }
 }
 
-export const devFallbackRepository = process.env.NODE_ENV !== 'production' ? new DevFallbackRepository() : null;
+let _devFallbackInstance: DevFallbackRepository | null = null;
+
+export function getDevFallbackRepository(): DevFallbackRepository {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('FATAL: Development fallback repository is strictly disabled in production environment.');
+  }
+  if (!_devFallbackInstance) {
+    _devFallbackInstance = new DevFallbackRepository();
+  }
+  return _devFallbackInstance;
+}
+
+export const devFallbackRepository: DevFallbackRepository = new Proxy({} as DevFallbackRepository, {
+  get(_target, prop) {
+    return (getDevFallbackRepository() as any)[prop];
+  },
+});

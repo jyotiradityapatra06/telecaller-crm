@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
+import { createRequire } from 'module';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabase';
-import { devFallbackRepository } from './devFallbackRepository';
 import {
   User,
   Lead,
@@ -25,23 +25,41 @@ import {
   mapLeadHistoryFromRow,
 } from './mapper';
 
-export class DbRepository {
-  private defaultOrgId = 'org_demo_001';
+let cachedDevFallback: any = null;
 
+export class DbRepository {
   private get useFallback(): boolean {
-    return !isSupabaseConfigured() && process.env.NODE_ENV !== 'production';
+    return process.env.NODE_ENV !== 'production' && !isSupabaseConfigured();
+  }
+
+  private get fallbackRepo(): any {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL: Development fallback repository is strictly disabled in production mode.');
+    }
+    if (!cachedDevFallback) {
+      try {
+        const req = typeof require !== 'undefined' ? require : createRequire(process.cwd() + '/server/repository/dbRepository.ts');
+        const mod = req('./devFallbackRepository');
+        cachedDevFallback = mod?.getDevFallbackRepository ? mod.getDevFallbackRepository() : (mod?.devFallbackRepository || mod?.default || mod);
+      } catch (err: any) {
+        throw new Error(`FATAL: Unable to resolve development fallback repository: ${err?.message || err}`);
+      }
+    }
+    return cachedDevFallback;
   }
 
   public getOrganizationId(user?: User): string {
     if (this.useFallback) {
-      return devFallbackRepository!.getOrganizationId(user);
+      return this.fallbackRepo.getOrganizationId(user);
     }
     if (user) {
       const userOrg = (user as any).organizationId || (user as any).organization_id;
-      if (userOrg) return userOrg;
-      throw new Error('Unauthorized: Organization context required for authenticated requests.');
+      if (userOrg && typeof userOrg === 'string' && userOrg.trim()) {
+        return userOrg.trim();
+      }
+      throw new Error('Unauthorized: Organization context missing from authenticated user.');
     }
-    return this.defaultOrgId;
+    throw new Error('Unauthorized: Organization context required for CRM database operations.');
   }
 
   private get client() {
@@ -52,10 +70,12 @@ export class DbRepository {
     return supabase;
   }
 
-
   // --- USER METHODS ---
   public async getAllUsers(user?: User): Promise<User[]> {
-    if (this.useFallback) return devFallbackRepository!.getAllUsers(user);
+    if (this.useFallback) return this.fallbackRepo.getAllUsers(user);
+    if (!user) {
+      throw new Error('Unauthorized: User context required to fetch users.');
+    }
     const orgId = this.getOrganizationId(user);
     const { data, error } = await this.client
       .from('users')
@@ -67,7 +87,10 @@ export class DbRepository {
   }
 
   public async getTelecallers(brandFilter?: 'ALL' | BusinessBrand, user?: User): Promise<User[]> {
-    if (this.useFallback) return devFallbackRepository!.getTelecallers(brandFilter, user);
+    if (this.useFallback) return this.fallbackRepo.getTelecallers(brandFilter, user);
+    if (!user) {
+      throw new Error('Unauthorized: User context required to fetch telecallers.');
+    }
     const orgId = this.getOrganizationId(user);
     const { data, error } = await this.client
       .from('users')
@@ -87,7 +110,8 @@ export class DbRepository {
   }
 
   public async findUserById(id: string, userContext?: User): Promise<(User & { passwordHash: string }) | undefined> {
-    if (this.useFallback) return devFallbackRepository!.findUserById(id, userContext);
+    if (this.useFallback) return this.fallbackRepo.findUserById(id, userContext);
+    if (!id) return undefined;
     let query = this.client.from('users').select('*').eq('id', id);
     if (userContext) {
       const orgId = this.getOrganizationId(userContext);
@@ -98,17 +122,26 @@ export class DbRepository {
     return mapUserFromRow(data);
   }
 
-  public async findUserByLoginId(loginId: string): Promise<(User & { passwordHash: string }) | undefined> {
-    if (this.useFallback) return devFallbackRepository!.findUserByLoginId(loginId);
+  public async findUserByLoginId(loginId: string, orgId?: string): Promise<(User & { passwordHash: string }) | undefined> {
+    if (this.useFallback) return this.fallbackRepo.findUserByLoginId(loginId);
     if (!loginId) return undefined;
     const clean = loginId.trim().toLowerCase();
 
-    const { data, error } = await this.client
+    let query = this.client
       .from('users')
       .select('*')
       .ilike('login_id', clean);
 
+    if (orgId) {
+      query = query.eq('organization_id', orgId);
+    }
+
+    const { data, error } = await query;
+
     if (error || !data || data.length === 0) return undefined;
+    if (data.length > 1) {
+      throw new Error('Ambiguous login ID: Multiple accounts found across organizations. Please contact your CRM Administrator.');
+    }
     return mapUserFromRow(data[0]);
   }
 
@@ -119,7 +152,7 @@ export class DbRepository {
     phone?: string;
     email?: string;
   }): Promise<User> {
-    if (this.useFallback) return devFallbackRepository!.registerAdmin(data);
+    if (this.useFallback) return this.fallbackRepo.registerAdmin(data);
 
     const cleanId = data.loginId.trim().toUpperCase();
     const existing = await this.findUserByLoginId(cleanId);
@@ -175,7 +208,7 @@ export class DbRepository {
     return safeUser;
   }
 
-  private async generateNextLoginId(brandAccess: BrandAccess, adminUser?: User): Promise<string> {
+  private async generateNextLoginId(brandAccess: BrandAccess, adminUser: User): Promise<string> {
     const prefix =
       brandAccess === 'APNI_VIDYA'
         ? 'TC_VIDYA'
@@ -219,9 +252,12 @@ export class DbRepository {
       email?: string;
       dailyTarget?: number;
     },
-    adminUser?: User
+    adminUser: User
   ): Promise<{ user: User; temporaryPassword?: string }> {
-    if (this.useFallback) return devFallbackRepository!.createTelecaller(data, adminUser);
+    if (this.useFallback) return this.fallbackRepo.createTelecaller(data, adminUser);
+    if (!adminUser) {
+      throw new Error('Unauthorized: Admin user context required to create telecaller.');
+    }
 
     const orgId = this.getOrganizationId(adminUser);
     const brandAccess = data.brandAccess || 'APNI_VIDYA';
@@ -230,7 +266,7 @@ export class DbRepository {
       ? data.loginId.trim().toUpperCase()
       : await this.generateNextLoginId(brandAccess, adminUser);
 
-    const existing = await this.findUserByLoginId(finalLoginId);
+    const existing = await this.findUserByLoginId(finalLoginId, orgId);
     if (existing) {
       throw new Error(`Telecaller ID "${finalLoginId}" already exists. Please choose a unique ID.`);
     }
@@ -283,9 +319,12 @@ export class DbRepository {
       isActive: boolean;
       password?: string;
     }>,
-    adminUser?: User
+    adminUser: User
   ): Promise<User> {
-    if (this.useFallback) return devFallbackRepository!.updateTelecaller(id, updates, adminUser);
+    if (this.useFallback) return this.fallbackRepo.updateTelecaller(id, updates, adminUser);
+    if (!adminUser) {
+      throw new Error('Unauthorized: Admin user context required to update telecaller.');
+    }
     const orgId = this.getOrganizationId(adminUser);
     const user = await this.findUserById(id, adminUser);
     if (!user) {
@@ -327,9 +366,12 @@ export class DbRepository {
 
   public async resetTelecallerPassword(
     id: string,
-    adminUser?: User
+    adminUser: User
   ): Promise<{ user: User; temporaryPassword: string }> {
-    if (this.useFallback) return devFallbackRepository!.resetTelecallerPassword(id, adminUser);
+    if (this.useFallback) return this.fallbackRepo.resetTelecallerPassword(id, adminUser);
+    if (!adminUser) {
+      throw new Error('Unauthorized: Admin user context required to reset telecaller password.');
+    }
     const orgId = this.getOrganizationId(adminUser);
 
     // Verify telecaller exists and belongs to this organization
@@ -376,29 +418,39 @@ export class DbRepository {
     };
   }
 
-  public async updateUserPassword(userId: string, newHash: string, userContext?: User): Promise<void> {
-    if (this.useFallback) return devFallbackRepository!.updateUserPassword(userId, newHash, userContext);
-    const orgId = userContext ? this.getOrganizationId(userContext) : undefined;
-    let query = this.client
+  public async updateUserPassword(userId: string, newHash: string, userContext: User): Promise<void> {
+    if (this.useFallback) return this.fallbackRepo.updateUserPassword(userId, newHash, userContext);
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to update user password.');
+    }
+    const orgId = this.getOrganizationId(userContext);
+
+    // Strict boundary: Users can only update their own password unless they are ADMIN
+    if (userContext.role !== 'ADMIN' && userContext.id !== userId) {
+      throw new Error('Forbidden: You can only update your own password.');
+    }
+
+    const { error } = await this.client
       .from('users')
       .update({ password_hash: newHash, updated_at: new Date().toISOString() })
+      .eq('organization_id', orgId)
       .eq('id', userId);
-    if (orgId) {
-      query = query.eq('organization_id', orgId);
-    }
-    const { error } = await query;
+
     if (error) {
       throw new Error(`Failed to update user password: ${error.message}`);
     }
   }
 
-  // --- ATOMIC TELECALLER DELETION (RPC) ---
-  public async deleteTelecaller(id: string, adminUser?: User): Promise<{ success: boolean; unassignedLeadsCount: number }> {
-    if (this.useFallback) return devFallbackRepository!.deleteTelecaller(id, adminUser);
+  // --- ATOMIC TELECALLER DELETION (RPC - FAILS CLOSED) ---
+  public async deleteTelecaller(id: string, adminUser: User): Promise<{ success: boolean; unassignedLeadsCount: number }> {
+    if (this.useFallback) return this.fallbackRepo.deleteTelecaller(id, adminUser);
+    if (!adminUser) {
+      throw new Error('Unauthorized: Admin user context required to delete telecaller.');
+    }
     const orgId = this.getOrganizationId(adminUser);
-    const adminId = adminUser?.id || 'usr_admin_001';
+    const adminId = adminUser.id;
 
-    // Call Atomic RPC
+    // Call Atomic RPC - Must fail closed without sequential fallback in production
     const { data, error } = await this.client.rpc('delete_telecaller_atomic', {
       p_org_id: orgId,
       p_telecaller_id: id,
@@ -406,57 +458,13 @@ export class DbRepository {
     });
 
     if (error) {
-      // Fallback if RPC not yet created in remote DB
-      return this.deleteTelecallerSequential(id, orgId, adminId);
+      throw new Error(`Failed to delete telecaller: ${error.message}`);
     }
 
     return {
       success: Boolean(data?.success),
       unassignedLeadsCount: Number(data?.unassignedLeadsCount) || 0,
     };
-  }
-
-  private async deleteTelecallerSequential(id: string, orgId: string, adminId: string) {
-    const user = await this.findUserById(id);
-    if (!user) throw new Error(`Telecaller not found with ID: ${id}`);
-
-    const { data: assignedLeads } = await this.client
-      .from('leads')
-      .select('id')
-      .eq('organization_id', orgId)
-      .eq('assigned_to', id);
-
-    const unassignedLeadsCount = assignedLeads?.length || 0;
-    const nowIso = new Date().toISOString();
-
-    if (unassignedLeadsCount > 0) {
-      await this.client
-        .from('leads')
-        .update({ assigned_to: null, updated_at: nowIso })
-        .eq('organization_id', orgId)
-        .eq('assigned_to', id);
-
-      const historyRows = assignedLeads!.map((l) => ({
-        id: `hist_${l.id}_del_tc_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
-        organization_id: orgId,
-        lead_id: l.id,
-        user_id: adminId,
-        action: 'REASSIGNED',
-        description: `Telecaller ${user.name} (${user.loginId}) was removed. Lead returned to Unassigned Pool.`,
-        timestamp: nowIso,
-      }));
-
-      await this.client.from('lead_history').insert(historyRows);
-    }
-
-    const { error: delError } = await this.client
-      .from('users')
-      .delete()
-      .eq('organization_id', orgId)
-      .eq('id', id);
-
-    if (delError) throw new Error(`Failed to delete telecaller user: ${delError.message}`);
-    return { success: true, unassignedLeadsCount };
   }
 
   // --- LEAD METHODS ---
@@ -466,8 +474,11 @@ export class DbRepository {
     status?: LeadStatus;
     search?: string;
   }, userContext?: User): Promise<Lead[]> {
-    if (this.useFallback) return devFallbackRepository!.getAllLeads(filter, userContext);
-    const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
+    if (this.useFallback) return this.fallbackRepo.getAllLeads(filter, userContext);
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to retrieve leads.');
+    }
+    const orgId = this.getOrganizationId(userContext);
     await this.recalculateFollowUpStatuses(orgId);
 
     let query = this.client.from('leads').select('*').eq('organization_id', orgId);
@@ -585,8 +596,11 @@ export class DbRepository {
   }
 
   public async getLeadById(id: string, userContext?: User): Promise<Lead | undefined> {
-    if (this.useFallback) return devFallbackRepository!.getLeadById(id, userContext);
-    const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
+    if (this.useFallback) return this.fallbackRepo.getLeadById(id, userContext);
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to retrieve lead.');
+    }
+    const orgId = this.getOrganizationId(userContext);
     const { data, error } = await this.client
       .from('leads')
       .select('*')
@@ -603,30 +617,24 @@ export class DbRepository {
     return this.enrichLead(lead, userMap, orgId);
   }
 
-  private async enrichLead(lead: Lead, userMap?: Map<string, User>, orgId?: string): Promise<Lead> {
-    const resolvedOrgId = orgId || this.defaultOrgId;
-    if (!userMap) {
-      const users = await this.getAllUsers();
-      userMap = new Map(users.map((u) => [u.id, u]));
-    }
-
+  private async enrichLead(lead: Lead, userMap: Map<string, User>, orgId: string): Promise<Lead> {
     const [{ data: historyRows }, { data: callRows }, { data: fuRows }] = await Promise.all([
       this.client
         .from('lead_history')
         .select('*')
-        .eq('organization_id', resolvedOrgId)
+        .eq('organization_id', orgId)
         .eq('lead_id', lead.id)
         .order('timestamp', { ascending: false }),
       this.client
         .from('call_activities')
         .select('*')
-        .eq('organization_id', resolvedOrgId)
+        .eq('organization_id', orgId)
         .eq('lead_id', lead.id)
         .order('called_at', { ascending: false }),
       this.client
         .from('follow_ups')
         .select('*')
-        .eq('organization_id', resolvedOrgId)
+        .eq('organization_id', orgId)
         .eq('lead_id', lead.id)
         .order('created_at', { ascending: false }),
     ]);
@@ -655,7 +663,10 @@ export class DbRepository {
     adminUser?: User,
     defaultBrand?: BusinessBrand
   ): Promise<{ importedCount: number; failedCount: number; leads: Lead[] }> {
-    if (this.useFallback) return devFallbackRepository!.importLeads(rows, assignedToTelecallerId, adminUser, defaultBrand);
+    if (this.useFallback) return this.fallbackRepo.importLeads(rows, assignedToTelecallerId, adminUser, defaultBrand);
+    if (!adminUser) {
+      throw new Error('Unauthorized: Admin user context required for lead import.');
+    }
     const orgId = this.getOrganizationId(adminUser);
     const now = new Date();
     const importedLeads: Lead[] = [];
@@ -664,7 +675,7 @@ export class DbRepository {
 
     const users = await this.getAllUsers(adminUser);
     const tc = assignedToTelecallerId ? users.find((u) => u.id === assignedToTelecallerId) : null;
-    const admin = adminUser || { id: 'usr_admin_001', name: 'Master Admin HQ' } as any;
+    const admin = adminUser;
 
     const leadRowsToInsert: any[] = [];
     const historyRowsToInsert: any[] = [];
@@ -754,16 +765,19 @@ export class DbRepository {
     return { importedCount, failedCount, leads: importedLeads };
   }
 
-  // --- ATOMIC LEAD ASSIGNMENT (RPC) ---
+  // --- ATOMIC LEAD ASSIGNMENT (RPC - FAILS CLOSED) ---
   public async assignLeads(
     leadIds: string[],
     telecallerId: string | null,
     adminUser: User
   ): Promise<{ assignedCount: number; leads: Lead[] }> {
-    if (this.useFallback) return devFallbackRepository!.assignLeads(leadIds, telecallerId, adminUser);
+    if (this.useFallback) return this.fallbackRepo.assignLeads(leadIds, telecallerId, adminUser);
+    if (!adminUser) {
+      throw new Error('Unauthorized: Admin user context required to assign leads.');
+    }
     const orgId = this.getOrganizationId(adminUser);
 
-    // Call Atomic RPC
+    // Call Atomic RPC - Fail closed
     const { data, error } = await this.client.rpc('assign_leads_atomic', {
       p_org_id: orgId,
       p_lead_ids: leadIds,
@@ -772,7 +786,7 @@ export class DbRepository {
     });
 
     if (error) {
-      return this.assignLeadsSequential(leadIds, telecallerId, adminUser, orgId);
+      throw new Error(`Lead assignment failed: ${error.message}`);
     }
 
     const assignedCount = Number(data?.assignedCount) || 0;
@@ -780,67 +794,17 @@ export class DbRepository {
     return { assignedCount, leads: modifiedLeads.filter(Boolean) as Lead[] };
   }
 
-  private async assignLeadsSequential(leadIds: string[], telecallerId: string | null, adminUser: User, orgId: string) {
-    const nowIso = new Date().toISOString();
-    const users = await this.getAllUsers(adminUser);
-    const tc = telecallerId ? users.find((u) => u.id === telecallerId) : null;
-
-    let assignedCount = 0;
-    const modifiedLeads: Lead[] = [];
-
-    for (const id of leadIds) {
-      const lead = await this.getLeadById(id, adminUser);
-      if (!lead) continue;
-
-      const previousTcName = lead.assignedTelecallerName || 'Unassigned';
-      const updatedAssignedTo = tc ? tc.id : null;
-
-      await this.client
-        .from('leads')
-        .update({ assigned_to: updatedAssignedTo, updated_at: nowIso })
-        .eq('organization_id', orgId)
-        .eq('id', id);
-
-      const historyId = `hist_${id}_assign_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
-      await this.client.from('lead_history').insert({
-        id: historyId,
-        organization_id: orgId,
-        lead_id: id,
-        user_id: adminUser.id,
-        action: tc ? 'ASSIGNED' : 'REASSIGNED',
-        description: tc
-          ? `Lead assigned to ${tc.name} (${tc.loginId}) [Brand Access: ${tc.brandAccess}] by ${adminUser.name}. Previous: ${previousTcName}.`
-          : `Lead returned to Unassigned Pool by ${adminUser.name}.`,
-        timestamp: nowIso,
-      });
-
-      const asgnId = `asgn_${id}_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
-      await this.client.from('lead_assignments').insert({
-        id: asgnId,
-        organization_id: orgId,
-        lead_id: id,
-        assigned_to: updatedAssignedTo,
-        assigned_by: adminUser.id,
-        assignment_type: tc ? 'ASSIGNED' : 'UNASSIGNED',
-        created_at: nowIso,
-      });
-
-      assignedCount++;
-      const updatedLead = await this.getLeadById(id, adminUser);
-      if (updatedLead) modifiedLeads.push(updatedLead);
-    }
-
-    return { assignedCount, leads: modifiedLeads };
-  }
-
-  // --- ATOMIC AUTO-DISTRIBUTION (RPC) ---
+  // --- ATOMIC AUTO-DISTRIBUTION (RPC - FAILS CLOSED) ---
   public async autoDistributeLeads(
     brandFilter?: 'ALL' | BusinessBrand,
     adminUser?: User
   ): Promise<{ vidyaAssigned: number; estateAssigned: number; totalAssigned: number; message: string }> {
-    if (this.useFallback) return devFallbackRepository!.autoDistributeLeads(brandFilter, adminUser);
+    if (this.useFallback) return this.fallbackRepo.autoDistributeLeads(brandFilter, adminUser);
+    if (!adminUser) {
+      throw new Error('Unauthorized: Admin user context required for auto-distribution.');
+    }
     const orgId = this.getOrganizationId(adminUser);
-    const adminId = adminUser?.id || 'usr_admin_001';
+    const adminId = adminUser.id;
 
     const { data, error } = await this.client.rpc('auto_distribute_leads_atomic', {
       p_org_id: orgId,
@@ -849,7 +813,7 @@ export class DbRepository {
     });
 
     if (error) {
-      return this.autoDistributeLeadsSequential(brandFilter, adminUser, orgId, adminId);
+      throw new Error(`Auto-distribution failed: ${error.message}`);
     }
 
     return {
@@ -860,104 +824,7 @@ export class DbRepository {
     };
   }
 
-  private async autoDistributeLeadsSequential(brandFilter: any, adminUser: any, orgId: string, adminId: string) {
-    const nowIso = new Date().toISOString();
-    const admin = adminUser || { id: 'usr_admin_001', name: 'Master Admin' } as any;
-
-    let vidyaAssigned = 0;
-    let estateAssigned = 0;
-
-    const allUsers = await this.getAllUsers(adminUser);
-    const vidyaCallers = allUsers.filter((u) => u.role === 'TELECALLER' && u.isActive && (u.brandAccess === 'APNI_VIDYA' || u.brandAccess === 'BOTH'));
-    const estateCallers = allUsers.filter((u) => u.role === 'TELECALLER' && u.isActive && (u.brandAccess === 'APNI_ESTATE' || u.brandAccess === 'BOTH'));
-
-    if (!brandFilter || brandFilter === 'ALL' || brandFilter === 'APNI_VIDYA') {
-      if (vidyaCallers.length > 0) {
-        const { data: unassignedVidya } = await this.client
-          .from('leads')
-          .select('id')
-          .eq('organization_id', orgId)
-          .eq('brand', 'APNI_VIDYA')
-          .is('assigned_to', null);
-
-        if (unassignedVidya && unassignedVidya.length > 0) {
-          for (let index = 0; index < unassignedVidya.length; index++) {
-            const lead = unassignedVidya[index];
-            const targetCaller = vidyaCallers[index % vidyaCallers.length];
-
-            await this.client.from('leads').update({ assigned_to: targetCaller.id, updated_at: nowIso }).eq('id', lead.id);
-            await this.client.from('lead_history').insert({
-              id: `hist_${lead.id}_auto_${Date.now()}_${index}`,
-              organization_id: orgId,
-              lead_id: lead.id,
-              user_id: admin.id,
-              action: 'ASSIGNED',
-              description: `Auto-routed to ${targetCaller.name} via Apni Vidya Distribution Engine.`,
-              timestamp: nowIso,
-            });
-            await this.client.from('lead_assignments').insert({
-              id: `asgn_${lead.id}_auto_${Date.now()}_${index}`,
-              organization_id: orgId,
-              lead_id: lead.id,
-              assigned_to: targetCaller.id,
-              assigned_by: admin.id,
-              assignment_type: 'ASSIGNED',
-              created_at: nowIso,
-            });
-            vidyaAssigned++;
-          }
-        }
-      }
-    }
-
-    if (!brandFilter || brandFilter === 'ALL' || brandFilter === 'APNI_ESTATE') {
-      if (estateCallers.length > 0) {
-        const { data: unassignedEstate } = await this.client
-          .from('leads')
-          .select('id')
-          .eq('organization_id', orgId)
-          .eq('brand', 'APNI_ESTATE')
-          .is('assigned_to', null);
-
-        if (unassignedEstate && unassignedEstate.length > 0) {
-          for (let index = 0; index < unassignedEstate.length; index++) {
-            const lead = unassignedEstate[index];
-            const targetCaller = estateCallers[index % estateCallers.length];
-
-            await this.client.from('leads').update({ assigned_to: targetCaller.id, updated_at: nowIso }).eq('id', lead.id);
-            await this.client.from('lead_history').insert({
-              id: `hist_${lead.id}_auto_${Date.now()}_${index}`,
-              organization_id: orgId,
-              lead_id: lead.id,
-              user_id: admin.id,
-              action: 'ASSIGNED',
-              description: `Auto-routed to ${targetCaller.name} via Apni Estate Distribution Engine.`,
-              timestamp: nowIso,
-            });
-            await this.client.from('lead_assignments').insert({
-              id: `asgn_${lead.id}_auto_${Date.now()}_${index}`,
-              organization_id: orgId,
-              lead_id: lead.id,
-              assigned_to: targetCaller.id,
-              assigned_by: admin.id,
-              assignment_type: 'ASSIGNED',
-              created_at: nowIso,
-            });
-            estateAssigned++;
-          }
-        }
-      }
-    }
-
-    return {
-      vidyaAssigned,
-      estateAssigned,
-      totalAssigned: vidyaAssigned + estateAssigned,
-      message: `Automated distribution complete: ${vidyaAssigned} Vidya leads and ${estateAssigned} Estate leads routed.`,
-    };
-  }
-
-  // --- ATOMIC CALL LOGGING (RPC) ---
+  // --- ATOMIC CALL LOGGING (RPC - FAILS CLOSED) ---
   public async recordCallActivity(data: {
     leadId: string;
     telecallerId: string;
@@ -973,10 +840,13 @@ export class DbRepository {
     };
   }, userContext?: User): Promise<{ callActivity: CallActivity; lead: Lead; followUp?: FollowUp }> {
     if (this.useFallback) {
-      const res = await devFallbackRepository!.recordCallActivity(data, userContext);
+      const res = await this.fallbackRepo.recordCallActivity(data, userContext);
       return { callActivity: res.callActivity, lead: res.lead, followUp: res.followUp };
     }
-    const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to record call activity.');
+    }
+    const orgId = this.getOrganizationId(userContext);
 
     const { data: rpcData, error } = await this.client.rpc('record_call_activity_atomic', {
       p_org_id: orgId,
@@ -991,16 +861,20 @@ export class DbRepository {
     });
 
     if (error) {
-      return this.recordCallActivitySequential(data, orgId, userContext);
+      throw new Error(`Recording call activity failed: ${error.message}`);
     }
 
     const updatedLead = await this.getLeadById(data.leadId, userContext);
-    const { data: callRow } = await this.client
+    const { data: callRow, error: callErr } = await this.client
       .from('call_activities')
       .select('*')
       .eq('organization_id', orgId)
       .eq('id', rpcData.callActivityId)
       .single();
+
+    if (callErr || !callRow) {
+      throw new Error(`Failed to load recorded call activity: ${callErr?.message || 'Not found'}`);
+    }
 
     const users = await this.getAllUsers(userContext);
     const userMap = new Map(users.map((u) => [u.id, u]));
@@ -1026,89 +900,7 @@ export class DbRepository {
     };
   }
 
-  private async recordCallActivitySequential(data: any, orgId: string, userContext?: User) {
-    const lead = await this.getLeadById(data.leadId, userContext);
-    if (!lead) throw new Error(`Lead with ID ${data.leadId} was not found.`);
-
-    const tc = await this.findUserById(data.telecallerId, userContext);
-    if (!tc) throw new Error(`Telecaller with ID ${data.telecallerId} was not found.`);
-
-    const nowIso = new Date().toISOString();
-    const prevStatus = lead.status;
-
-    const callActivityId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const callActivity: CallActivity = {
-      id: callActivityId,
-      leadId: lead.id,
-      telecallerId: tc.id,
-      telecallerName: tc.name,
-      status: data.status,
-      note: data.note?.trim(),
-      calledAt: nowIso,
-      durationSeconds: data.durationSeconds || 0,
-      callType: data.callType || 'CALL',
-    };
-
-    await this.client.from('call_activities').insert({
-      id: callActivity.id,
-      organization_id: orgId,
-      lead_id: callActivity.leadId,
-      telecaller_id: callActivity.telecallerId,
-      status: callActivity.status,
-      note: callActivity.note || null,
-      called_at: callActivity.calledAt,
-      duration_seconds: callActivity.durationSeconds || 0,
-      call_type: callActivity.callType,
-    });
-
-    const leadUpdatePayload: any = {
-      status: data.status,
-      last_call_at: nowIso,
-      total_calls_count: (lead.totalCallsCount || 0) + 1,
-      updated_at: nowIso,
-    };
-
-    if (data.note) leadUpdatePayload.notes = data.note.trim();
-    if (data.customFields) {
-      if (data.customFields.courseInterest) leadUpdatePayload.course_interest = data.customFields.courseInterest;
-      if (data.customFields.qualification) leadUpdatePayload.qualification = data.customFields.qualification;
-      if (data.customFields.preferredBatch) leadUpdatePayload.preferred_batch = data.customFields.preferredBatch;
-      if (data.customFields.propertyType) leadUpdatePayload.property_type = data.customFields.propertyType;
-      if (data.customFields.budget) leadUpdatePayload.budget = data.customFields.budget;
-      if (data.customFields.preferredLocation) leadUpdatePayload.preferred_location = data.customFields.preferredLocation;
-      if (data.customFields.siteVisitDate) leadUpdatePayload.site_visit_date = data.customFields.siteVisitDate;
-    }
-
-    await this.client.from('lead_history').insert({
-      id: `hist_${lead.id}_call_${Date.now()}`,
-      organization_id: orgId,
-      lead_id: lead.id,
-      user_id: tc.id,
-      action: 'CALL_MADE',
-      description: `${data.callType === 'WHATSAPP' ? 'WhatsApp outreach' : 'Phone call'} by ${tc.name}. Status: [${data.status}] (Previous: [${prevStatus}]). ${data.note ? `Note: "${data.note}"` : ''}`,
-      timestamp: nowIso,
-    });
-
-    let createdFollowUp: FollowUp | undefined = undefined;
-    if (data.followUp && data.followUp.dueDate) {
-      createdFollowUp = await this.scheduleFollowUp({
-        leadId: lead.id,
-        telecallerId: tc.id,
-        dueDate: data.followUp.dueDate,
-        dueTime: data.followUp.dueTime || '04:00 PM',
-        note: data.followUp.note || data.note,
-      }, userContext);
-
-      leadUpdatePayload.next_follow_up_at = `${data.followUp.dueDate} ${data.followUp.dueTime || '04:00 PM'}`;
-    }
-
-    await this.client.from('leads').update(leadUpdatePayload).eq('organization_id', orgId).eq('id', lead.id);
-    const updatedLead = await this.getLeadById(lead.id, userContext);
-
-    return { callActivity, lead: updatedLead!, followUp: createdFollowUp };
-  }
-
-  // --- ATOMIC FOLLOW-UP CREATION (RPC) ---
+  // --- ATOMIC FOLLOW-UP CREATION (RPC - FAILS CLOSED) ---
   public async scheduleFollowUp(data: {
     leadId: string;
     telecallerId: string;
@@ -1117,10 +909,13 @@ export class DbRepository {
     note?: string;
   }, userContext?: User): Promise<FollowUp> {
     if (this.useFallback) {
-      const res = await devFallbackRepository!.scheduleFollowUp(data, userContext);
+      const res = await this.fallbackRepo.scheduleFollowUp(data, userContext);
       return res.followUp;
     }
-    const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to schedule follow-up.');
+    }
+    const orgId = this.getOrganizationId(userContext);
 
     const { data: rpcData, error } = await this.client.rpc('schedule_follow_up_atomic', {
       p_org_id: orgId,
@@ -1132,15 +927,19 @@ export class DbRepository {
     });
 
     if (error) {
-      return this.scheduleFollowUpSequential(data, orgId, userContext);
+      throw new Error(`Scheduling follow-up failed: ${error.message}`);
     }
 
-    const { data: fuRow } = await this.client
+    const { data: fuRow, error: fuErr } = await this.client
       .from('follow_ups')
       .select('*')
       .eq('organization_id', orgId)
       .eq('id', rpcData.followUpId)
       .single();
+
+    if (fuErr || !fuRow) {
+      throw new Error(`Failed to load scheduled follow-up: ${fuErr?.message || 'Not found'}`);
+    }
 
     const lead = await this.getLeadById(data.leadId, userContext);
     const users = await this.getAllUsers(userContext);
@@ -1149,57 +948,16 @@ export class DbRepository {
     return mapFollowUpFromRow(fuRow, new Map([[lead!.id, lead!]]), userMap);
   }
 
-  private async scheduleFollowUpSequential(data: any, orgId: string, userContext?: User) {
-    const lead = await this.getLeadById(data.leadId, userContext);
-    if (!lead) throw new Error(`Lead with ID ${data.leadId} not found.`);
-
-    const tc = await this.findUserById(data.telecallerId, userContext);
-    if (!tc) throw new Error(`Telecaller with ID ${data.telecallerId} not found.`);
-
-    const nowIso = new Date().toISOString();
-    const todayStr = nowIso.split('T')[0];
-
-    let status: 'PENDING' | 'OVERDUE' = 'PENDING';
-    if (data.dueDate < todayStr) status = 'OVERDUE';
-
-    const fu: FollowUp = {
-      id: `fu_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      leadId: lead.id,
-      leadName: lead.name,
-      leadPhone: lead.phone,
-      brand: lead.brand,
-      telecallerId: tc.id,
-      telecallerName: tc.name,
-      dateTime: `${data.dueDate}T${data.dueTime || '12:00'}`,
-      dueDate: data.dueDate,
-      dueTime: data.dueTime || '04:00 PM',
-      note: data.note,
-      status,
-      createdAt: nowIso,
-    };
-
-    await this.client.from('follow_ups').insert(mapFollowUpToRow(fu, orgId));
-    await this.client.from('leads').update({ next_follow_up_at: `${data.dueDate} ${data.dueTime || '04:00 PM'}`, updated_at: nowIso }).eq('organization_id', orgId).eq('id', lead.id);
-    await this.client.from('lead_history').insert({
-      id: `hist_${lead.id}_fu_sched_${Date.now()}`,
-      organization_id: orgId,
-      lead_id: lead.id,
-      user_id: tc.id,
-      action: 'FOLLOW_UP_CREATED',
-      description: `Follow-up scheduled for ${fu.dueDate} at ${fu.dueTime} by ${tc.name}.`,
-      timestamp: nowIso,
-    });
-
-    return fu;
-  }
-
-  // --- ATOMIC FOLLOW-UP COMPLETION (RPC) ---
+  // --- ATOMIC FOLLOW-UP COMPLETION (RPC - FAILS CLOSED) ---
   public async completeFollowUp(
     followUpId: string,
     user: User,
     completionNote?: string
   ): Promise<{ followUp: FollowUp; lead: Lead }> {
-    if (this.useFallback) return devFallbackRepository!.completeFollowUp(followUpId, user, completionNote);
+    if (this.useFallback) return this.fallbackRepo.completeFollowUp(followUpId, user, completionNote);
+    if (!user) {
+      throw new Error('Unauthorized: User context required to complete follow-up.');
+    }
     const orgId = this.getOrganizationId(user);
 
     const { data: rpcData, error } = await this.client.rpc('complete_follow_up_atomic', {
@@ -1211,15 +969,19 @@ export class DbRepository {
     });
 
     if (error) {
-      return this.completeFollowUpSequential(followUpId, user, completionNote, orgId);
+      throw new Error(`Completing follow-up failed: ${error.message}`);
     }
 
-    const { data: fuRow } = await this.client
+    const { data: fuRow, error: fuErr } = await this.client
       .from('follow_ups')
       .select('*')
       .eq('organization_id', orgId)
       .eq('id', followUpId)
       .single();
+
+    if (fuErr || !fuRow) {
+      throw new Error(`Failed to load completed follow-up: ${fuErr?.message || 'Not found'}`);
+    }
 
     const lead = await this.getLeadById(rpcData.leadId, user);
     const users = await this.getAllUsers(user);
@@ -1229,51 +991,17 @@ export class DbRepository {
     return { followUp: fu, lead: lead! };
   }
 
-  private async completeFollowUpSequential(followUpId: string, user: User, completionNote: string | undefined, orgId: string) {
-    const { data: fuRow } = await this.client
-      .from('follow_ups')
-      .select('*')
-      .eq('organization_id', orgId)
-      .eq('id', followUpId)
-      .single();
-
-    if (!fuRow) throw new Error(`Follow-up not found with ID: ${followUpId}`);
-
-    const nowIso = new Date().toISOString();
-    const updatedNote = completionNote ? `${fuRow.note ? fuRow.note + ' | ' : ''}Completion Note: ${completionNote}` : fuRow.note;
-
-    const { data: updatedFuRow } = await this.client
-      .from('follow_ups')
-      .update({ status: 'COMPLETED', completed_at: nowIso, note: updatedNote, updated_at: nowIso })
-      .eq('organization_id', orgId)
-      .eq('id', followUpId)
-      .select()
-      .single();
-
-    const fu = mapFollowUpFromRow(updatedFuRow);
-    await this.client.from('leads').update({ next_follow_up_at: null, updated_at: nowIso }).eq('organization_id', orgId).eq('id', fu.leadId);
-    await this.client.from('lead_history').insert({
-      id: `hist_${fu.leadId}_fu_done_${Date.now()}`,
-      organization_id: orgId,
-      lead_id: fu.leadId,
-      user_id: user.id,
-      action: 'FOLLOW_UP_COMPLETED',
-      description: `Follow-up marked as COMPLETED by ${user.name}.`,
-      timestamp: nowIso,
-    });
-
-    const lead = await this.getLeadById(fu.leadId, user);
-    return { followUp: fu, lead: lead! };
-  }
-
   // --- GET FOLLOW UPS ---
   public async getFollowUps(
     telecallerId?: string,
     brandFilter?: 'ALL' | BusinessBrand,
     userContext?: User
   ): Promise<{ overdue: FollowUp[]; today: FollowUp[]; upcoming: FollowUp[]; completed: FollowUp[] }> {
-    if (this.useFallback) return devFallbackRepository!.getFollowUps(telecallerId, brandFilter, userContext);
-    const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
+    if (this.useFallback) return this.fallbackRepo.getFollowUps(telecallerId, brandFilter, userContext);
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to fetch follow-ups.');
+    }
+    const orgId = this.getOrganizationId(userContext);
     await this.recalculateFollowUpStatuses(orgId);
 
     const todayStr = new Date().toISOString().split('T')[0];
@@ -1324,18 +1052,20 @@ export class DbRepository {
   }
 
   // --- RECALCULATE FOLLOW UP STATUSES ---
-  public async recalculateFollowUpStatuses(orgId?: string): Promise<void> {
+  public async recalculateFollowUpStatuses(orgId: string): Promise<void> {
     if (this.useFallback) {
-      devFallbackRepository!.recalculateFollowUpStatuses();
+      this.fallbackRepo.recalculateFollowUpStatuses();
       return;
     }
-    const resolvedOrgId = orgId || this.defaultOrgId;
+    if (!orgId || typeof orgId !== 'string') {
+      throw new Error('Unauthorized: Valid organization ID required to recalculate follow-up statuses.');
+    }
     const todayStr = new Date().toISOString().split('T')[0];
 
     await this.client
       .from('follow_ups')
       .update({ status: 'OVERDUE', updated_at: new Date().toISOString() })
-      .eq('organization_id', resolvedOrgId)
+      .eq('organization_id', orgId)
       .eq('status', 'PENDING')
       .lt('due_date', todayStr);
   }
@@ -1343,10 +1073,13 @@ export class DbRepository {
   // --- LEAD HISTORY ---
   public async getLeadHistory(leadId: string, userContext?: User): Promise<LeadHistory[]> {
     if (this.useFallback) {
-      const res = await devFallbackRepository!.getLeadHistory(leadId, userContext);
+      const res = await this.fallbackRepo.getLeadHistory(leadId, userContext);
       return res.history;
     }
-    const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to fetch lead history.');
+    }
+    const orgId = this.getOrganizationId(userContext);
     const { data: rows } = await this.client
       .from('lead_history')
       .select('*')
@@ -1363,8 +1096,11 @@ export class DbRepository {
 
   // --- ADMIN METRICS ---
   public async getAdminMetrics(brandFilter?: 'ALL' | BusinessBrand, userContext?: User): Promise<AdminMetrics> {
-    if (this.useFallback) return devFallbackRepository!.getAdminMetrics(brandFilter, userContext);
-    const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
+    if (this.useFallback) return this.fallbackRepo.getAdminMetrics(brandFilter, userContext);
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to fetch admin metrics.');
+    }
+    const orgId = this.getOrganizationId(userContext);
     await this.recalculateFollowUpStatuses(orgId);
     const todayStr = new Date().toISOString().split('T')[0];
 
@@ -1495,8 +1231,11 @@ export class DbRepository {
 
   // --- TELECALLER METRICS ---
   public async getTelecallerMetrics(telecallerId: string, userContext?: User): Promise<TelecallerMetrics> {
-    if (this.useFallback) return devFallbackRepository!.getTelecallerMetrics(telecallerId, userContext);
-    const orgId = userContext ? this.getOrganizationId(userContext) : this.defaultOrgId;
+    if (this.useFallback) return this.fallbackRepo.getTelecallerMetrics(telecallerId, userContext);
+    if (!userContext) {
+      throw new Error('Unauthorized: User context required to fetch telecaller metrics.');
+    }
+    const orgId = this.getOrganizationId(userContext);
     const tc = await this.findUserById(telecallerId, userContext);
     const todayStr = new Date().toISOString().split('T')[0];
 
@@ -1570,10 +1309,13 @@ export class DbRepository {
   }
 
   // --- ALL TELECALLERS PERFORMANCE ---
-  public async getAllTelecallersPerformance(brandFilter?: 'ALL' | BusinessBrand, userContext?: User): Promise<TelecallerMetrics[]> {
-    if (this.useFallback) return devFallbackRepository!.getAllTelecallersPerformance(brandFilter, userContext);
-    const telecallers = await this.getTelecallers(brandFilter, userContext);
-    return Promise.all(telecallers.map((tc) => this.getTelecallerMetrics(tc.id, userContext)));
+  public async getAllTelecallersPerformance(brandFilter?: 'ALL' | BusinessBrand, user?: User): Promise<TelecallerMetrics[]> {
+    if (this.useFallback) return this.fallbackRepo.getAllTelecallersPerformance(brandFilter, user);
+    if (!user) {
+      throw new Error('Unauthorized: User context required to fetch telecaller performance.');
+    }
+    const telecallers = await this.getTelecallers(brandFilter, user);
+    return Promise.all(telecallers.map((tc) => this.getTelecallerMetrics(tc.id, user)));
   }
 }
 

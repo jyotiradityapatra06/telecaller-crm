@@ -74,15 +74,16 @@ const DEFAULT_DEMO_ACCOUNTS: DemoAccountItem[] = [
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [authMode, setAuthMode] = useState<'SIGN_IN' | 'REGISTER_ADMIN'>('SIGN_IN');
+  const isDevMode = import.meta.env.DEV;
 
   // Sign In States
   const [roleTab, setRoleTab] = useState<'ADMIN' | 'TELECALLER'>('TELECALLER');
-  const [loginId, setLoginId] = useState<string>('TC_VIDYA_1');
-  const [password, setPassword] = useState<string>('password123');
+  const [loginId, setLoginId] = useState<string>(isDevMode ? 'TC_VIDYA_1' : '');
+  const [password, setPassword] = useState<string>(isDevMode ? 'password123' : '');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [demoAccounts, setDemoAccounts] = useState<DemoAccountItem[]>(DEFAULT_DEMO_ACCOUNTS);
+  const [demoAccounts, setDemoAccounts] = useState<DemoAccountItem[]>(isDevMode ? DEFAULT_DEMO_ACCOUNTS : []);
 
   // Admin Registration States
   const [regCompanyName, setRegCompanyName] = useState<string>('');
@@ -96,8 +97,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [regIsLoading, setRegIsLoading] = useState<boolean>(false);
   const [regError, setRegError] = useState<string | null>(null);
 
-  // Fetch real demo accounts from server on mount
+  // Fetch real demo accounts from server on mount only in dev mode
   useEffect(() => {
+    if (!isDevMode) return;
     let isMounted = true;
     api
       .getDemoAccounts()
@@ -146,13 +148,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         }
       })
       .catch(() => {
-        // Fallback to static defaults
+        // Fallback
       });
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isDevMode]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -369,8 +371,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     onClick={() => {
                       soundManager.playTap();
                       setRoleTab('TELECALLER');
-                      setLoginId('TC_VIDYA_1');
-                      setPassword('password123');
+                      if (isDevMode) {
+                        setLoginId('TC_VIDYA_1');
+                        setPassword('password123');
+                      }
                       setError(null);
                     }}
                     className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer min-h-[42px] ${
@@ -389,8 +393,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     onClick={() => {
                       soundManager.playTap();
                       setRoleTab('ADMIN');
-                      setLoginId('admin');
-                      setPassword('admin123');
+                      if (isDevMode) {
+                        setLoginId('admin');
+                        setPassword('admin123');
+                      }
                       setError(null);
                     }}
                     className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer min-h-[42px] ${
@@ -419,45 +425,46 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div>
                     <label className="text-xs font-semibold text-slate-300 block mb-1.5">
-                      {roleTab === 'ADMIN' ? 'Admin Login ID' : 'Telecaller Login ID'}
+                      {roleTab === 'ADMIN' ? 'Admin Login ID' : 'Telecaller ID'}
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                        <User className="w-4 h-4" />
+                        {roleTab === 'ADMIN' ? <Shield className="w-4 h-4" /> : <User className="w-4 h-4" />}
                       </div>
                       <input
                         type="text"
                         id="input-login-id"
                         value={loginId}
                         onChange={(e) => setLoginId(e.target.value)}
-                        placeholder={roleTab === 'ADMIN' ? 'admin' : 'TC_VIDYA_1, TC_ESTATE_1...'}
-                        className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all min-h-[46px]"
+                        placeholder={roleTab === 'ADMIN' ? 'Enter admin login ID' : 'Enter telecaller ID'}
                         required
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all min-h-[44px]"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-slate-300 block mb-1.5">Password</label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-semibold text-slate-300">Password</label>
+                    </div>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
                         <Lock className="w-4 h-4" />
                       </div>
                       <input
                         type={showPassword ? 'text' : 'password'}
-                        id="input-password"
+                        id="input-login-password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        placeholder="Enter your password"
-                        className="w-full pl-10 pr-11 py-3 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all min-h-[46px]"
+                        placeholder="Enter your account password"
                         required
+                        className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all min-h-[44px]"
                       />
                       <button
                         type="button"
-                        id="btn-toggle-password"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 cursor-pointer"
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white cursor-pointer"
+                        title={showPassword ? 'Hide password' : 'Show password'}
                       >
                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
@@ -468,14 +475,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     type="submit"
                     id="btn-login-submit"
                     disabled={isLoading}
-                    className={`w-full py-3.5 px-4 rounded-xl text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg active:scale-98 transition-all cursor-pointer min-h-[48px] ${
-                      roleTab === 'ADMIN'
+                    className={`w-full mt-2 py-3 px-4 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg min-h-[46px] ${
+                      isLoading
+                        ? 'bg-slate-700 cursor-not-allowed opacity-70'
+                        : roleTab === 'ADMIN'
                         ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'
                         : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/30'
-                    } disabled:opacity-60`}
+                    }`}
                   >
                     {isLoading ? (
-                      <span>Signing in...</span>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <>
                         <span>Sign In to {roleTab === 'ADMIN' ? 'Admin Portal' : 'Calling Portal'}</span>
@@ -499,56 +508,58 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                   </button>
                 </div>
 
-                {/* Quick Demo Credentials */}
-                <div className="mt-6 pt-5 border-t border-slate-800">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      <span>One-Tap Demo Accounts</span>
-                    </span>
-                  </div>
+                {/* Quick Demo Credentials - Gated to Development Mode Only */}
+                {isDevMode && demoAccounts.length > 0 && (
+                  <div className="mt-6 pt-5 border-t border-slate-800">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Development One-Tap Accounts</span>
+                      </span>
+                    </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    {demoAccounts.slice(0, 4).map((acc) => {
-                      const isSelected = loginId.toLowerCase() === acc.loginId.toLowerCase();
-                      return (
-                        <button
-                          key={acc.loginId}
-                          type="button"
-                          onClick={() => handleQuickSelect(acc)}
-                          className={`p-2.5 rounded-xl border text-left transition-all group cursor-pointer ${
-                            isSelected
-                              ? 'bg-slate-800 border-blue-500/80 shadow-xs'
-                              : 'bg-slate-950/80 hover:bg-slate-950 border-slate-800'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span
-                              className={`text-xs font-bold flex items-center gap-1 truncate ${
-                                acc.icon === 'admin'
-                                  ? 'text-indigo-400 group-hover:text-indigo-300'
-                                  : acc.icon === 'estate'
-                                  ? 'text-emerald-400 group-hover:text-emerald-300'
-                                  : acc.icon === 'dual'
-                                  ? 'text-purple-400 group-hover:text-purple-300'
-                                  : 'text-blue-400 group-hover:text-blue-300'
-                              }`}
-                            >
-                              {acc.icon === 'admin' && <Shield className="w-3 h-3 shrink-0" />}
-                              {acc.icon === 'vidya' && <GraduationCap className="w-3 h-3 shrink-0" />}
-                              {acc.icon === 'estate' && <Building2 className="w-3 h-3 shrink-0" />}
-                              {acc.icon === 'dual' && <PhoneCall className="w-3 h-3 shrink-0" />}
-                              <span className="truncate">{acc.name}</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      {demoAccounts.slice(0, 4).map((acc) => {
+                        const isSelected = loginId.toLowerCase() === acc.loginId.toLowerCase();
+                        return (
+                          <button
+                            key={acc.loginId}
+                            type="button"
+                            onClick={() => handleQuickSelect(acc)}
+                            className={`p-2.5 rounded-xl border text-left transition-all group cursor-pointer ${
+                              isSelected
+                                ? 'bg-slate-800 border-blue-500/80 shadow-xs'
+                                : 'bg-slate-950/80 hover:bg-slate-950 border-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span
+                                className={`text-xs font-bold flex items-center gap-1 truncate ${
+                                  acc.icon === 'admin'
+                                    ? 'text-indigo-400 group-hover:text-indigo-300'
+                                    : acc.icon === 'estate'
+                                    ? 'text-emerald-400 group-hover:text-emerald-300'
+                                    : acc.icon === 'dual'
+                                    ? 'text-purple-400 group-hover:text-purple-300'
+                                    : 'text-blue-400 group-hover:text-blue-300'
+                                }`}
+                              >
+                                {acc.icon === 'admin' && <Shield className="w-3 h-3 shrink-0" />}
+                                {acc.icon === 'vidya' && <GraduationCap className="w-3 h-3 shrink-0" />}
+                                {acc.icon === 'estate' && <Building2 className="w-3 h-3 shrink-0" />}
+                                {acc.icon === 'dual' && <PhoneCall className="w-3 h-3 shrink-0" />}
+                                <span className="truncate">{acc.name}</span>
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-slate-400 block mt-0.5 font-mono truncate">
+                              {acc.loginId}
                             </span>
-                          </div>
-                          <span className="text-[11px] text-slate-400 block mt-0.5 font-mono truncate">
-                            {acc.loginId} / {acc.password}
-                          </span>
-                        </button>
-                      );
-                    })}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
+                )}
               </>
             ) : (
               /* ========================================================================= */

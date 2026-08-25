@@ -10,6 +10,42 @@ import { adminRouter } from './server/routes/admin';
 import { telecallerRouter } from './server/routes/telecaller';
 import { getSupabaseClient, isSupabaseConfigured } from './server/supabase';
 
+// Production Environment Strict Configuration Guard
+function validateProductionEnvironment(): void {
+  if (process.env.NODE_ENV === 'production') {
+    const missing: string[] = [];
+
+    if (!process.env.JWT_SECRET) {
+      missing.push('JWT_SECRET');
+    } else if (
+      process.env.JWT_SECRET.length < 32 ||
+      process.env.JWT_SECRET === 'telecaller-crm-super-secure-jwt-secret-key-2026'
+    ) {
+      console.error('❌ FATAL: JWT_SECRET must be a custom secret of at least 32 characters in production.');
+      process.exit(1);
+    }
+
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_URL.startsWith('http')) {
+      missing.push('SUPABASE_URL');
+    }
+
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      missing.push('SUPABASE_SERVICE_ROLE_KEY');
+    }
+
+    if (!process.env.FRONTEND_URL || !process.env.FRONTEND_URL.startsWith('http')) {
+      missing.push('FRONTEND_URL (Must be valid HTTP/HTTPS URL for CORS)');
+    }
+
+    if (missing.length > 0) {
+      console.error(`❌ FATAL: Missing required production environment variables: ${missing.join(', ')}`);
+      process.exit(1);
+    }
+  }
+}
+
+validateProductionEnvironment();
+
 async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -33,7 +69,7 @@ async function startServer() {
     })
   );
 
-  // 2. Trust Proxy Configuration for Reverse Proxies (Vercel / Nginx / ALB)
+  // 2. Trust Proxy Configuration for Reverse Proxies (Vercel / Render / Nginx)
   const trustProxyEnv = process.env.TRUST_PROXY;
   const trustProxySetting = trustProxyEnv
     ? trustProxyEnv === 'true'
@@ -47,22 +83,28 @@ async function startServer() {
     app.set('trust proxy', trustProxySetting);
   }
 
-  // 2. Production-ready CORS configuration
-  const allowedOrigin = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? false : '*');
+  // 3. Hardened CORS configuration
+  const allowedOrigin =
+    process.env.NODE_ENV === 'production'
+      ? process.env.FRONTEND_URL!
+      : process.env.FRONTEND_URL || true;
+
   app.use(
     cors({
       origin: allowedOrigin,
       credentials: true,
+      methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
     })
   );
 
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-  // 3. API Rate Limiters
+  // 4. API Rate Limiters
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: process.env.NODE_ENV === 'production' ? 30 : 200, // 30 attempts per 15 mins in production, 200 in development
+    max: process.env.NODE_ENV === 'production' ? 30 : 200,
     message: { error: 'Too many authentication attempts. Please try again after 15 minutes.' },
     standardHeaders: true,
     legacyHeaders: false,
@@ -78,13 +120,13 @@ async function startServer() {
 
   const mutationLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 150, // Burst protection
+    max: 150,
     message: { error: 'Too many requests. Please slow down.' },
     standardHeaders: true,
     legacyHeaders: false,
   });
 
-  // Apply rate limiters to specific security-sensitive routes
+  // Apply rate limiters to sensitive endpoints
   app.use('/api/auth/login', authLimiter);
   app.use('/api/auth/register', authLimiter);
   app.use('/api/auth/password', authLimiter);
@@ -92,7 +134,7 @@ async function startServer() {
   app.use('/api/telecaller/calls', mutationLimiter);
   app.use('/api/telecaller/followups', mutationLimiter);
 
-  // Enhanced Health Check verifying DB Connectivity
+  // Health Check verifying DB Connectivity
   app.get('/api/health', async (_req, res) => {
     let dbConnected = false;
     let dbDetails = 'not_configured';
@@ -135,7 +177,7 @@ async function startServer() {
   app.use('/api/admin', adminRouter);
   app.use('/api/telecaller', telecallerRouter);
 
-  // Vite middleware setup
+  // Vite middleware setup (development) or Static serving (production)
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true, host: '0.0.0.0' },

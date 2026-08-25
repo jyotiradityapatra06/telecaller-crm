@@ -18,8 +18,8 @@ class DatabaseAdapter {
     console.log('ℹ️ Database seeding managed via Supabase migration/seed files.');
   }
 
-  public recalculateFollowUpStatuses() {
-    return dbRepository.recalculateFollowUpStatuses();
+  public recalculateFollowUpStatuses(orgId: string) {
+    return dbRepository.recalculateFollowUpStatuses(orgId);
   }
 
   public getAllUsers(user?: any) {

@@ -134,8 +134,15 @@ class ApiClient {
   public async getDemoAccounts(): Promise<{
     admin: { loginId: string; password: string; name: string; role: string; brandAccess: BrandAccess };
     telecallers: Array<{ loginId: string; password: string; name: string; id: string; brandAccess: BrandAccess; dailyTarget: number }>;
-  }> {
-    return this.request('/api/auth/demo-accounts');
+  } | null> {
+    if (import.meta.env.PROD) {
+      return null;
+    }
+    try {
+      return await this.request('/api/auth/demo-accounts');
+    } catch {
+      return null;
+    }
   }
 
   public logout(): void {

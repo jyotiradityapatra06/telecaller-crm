@@ -194,48 +194,51 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Quick Switch User & Utilities Section */}
       <div className="p-3 border-t border-slate-800/80 bg-slate-900/40 space-y-2">
-        <div>
-          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1 mb-1 block">
-            Switch Demo Account
-          </label>
-          <select
-            value={currentUser.loginId}
-            onChange={(e) => {
-              soundManager.playTap();
-              onSwitchUser(e.target.value);
-            }}
-            className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs font-medium text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
-          >
-            <option value="admin">🛡️ Master Admin HQ</option>
-            <optgroup label="🎓 Apni Vidya">
-              {allTelecallers
-                .filter((tc) => tc.brandAccess === 'APNI_VIDYA')
-                .map((tc) => (
-                  <option key={tc.id} value={tc.loginId}>
-                    🎓 {tc.name} ({tc.loginId})
-                  </option>
-                ))}
-            </optgroup>
-            <optgroup label="🏢 Apni Estate">
-              {allTelecallers
-                .filter((tc) => tc.brandAccess === 'APNI_ESTATE')
-                .map((tc) => (
-                  <option key={tc.id} value={tc.loginId}>
-                    🏢 {tc.name} ({tc.loginId})
-                  </option>
-                ))}
-            </optgroup>
-            <optgroup label="🌐 Dual Brand">
-              {allTelecallers
-                .filter((tc) => tc.brandAccess === 'BOTH')
-                .map((tc) => (
-                  <option key={tc.id} value={tc.loginId}>
-                    🌐 {tc.name} ({tc.loginId})
-                  </option>
-                ))}
-            </optgroup>
-          </select>
-        </div>
+        {/* Development Quick Switch */}
+        {import.meta.env.DEV && (
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1 mb-1 block">
+              Dev Switch Account
+            </label>
+            <select
+              value={currentUser.loginId}
+              onChange={(e) => {
+                soundManager.playTap();
+                onSwitchUser(e.target.value);
+              }}
+              className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs font-medium text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+            >
+              <option value="admin">🛡️ Master Admin HQ</option>
+              <optgroup label="🎓 Apni Vidya">
+                {allTelecallers
+                  .filter((tc) => tc.brandAccess === 'APNI_VIDYA')
+                  .map((tc) => (
+                    <option key={tc.id} value={tc.loginId}>
+                      🎓 {tc.name} ({tc.loginId})
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="🏢 Apni Estate">
+                {allTelecallers
+                  .filter((tc) => tc.brandAccess === 'APNI_ESTATE')
+                  .map((tc) => (
+                    <option key={tc.id} value={tc.loginId}>
+                      🏢 {tc.name} ({tc.loginId})
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="🌐 Dual Brand">
+                {allTelecallers
+                  .filter((tc) => tc.brandAccess === 'BOTH')
+                  .map((tc) => (
+                    <option key={tc.id} value={tc.loginId}>
+                      🌐 {tc.name} ({tc.loginId})
+                    </option>
+                  ))}
+              </optgroup>
+            </select>
+          </div>
+        )}
 
         {/* Quick Toolbar */}
         <div className="flex items-center gap-1.5 pt-1">
