@@ -3,6 +3,7 @@ import { User, Lead, CallActivity, FollowUp, LeadHistory } from '../../src/types
 export function mapUserFromRow(row: any): User & { passwordHash: string } {
   return {
     id: row.id,
+    organizationId: row.organization_id,
     name: row.name,
     loginId: row.login_id,
     role: row.role,
