@@ -25,18 +25,20 @@ authRouter.post('/register-owner', validateRequest(registerOwnerSchema), async (
 
   try {
     const cleanLoginId = loginId.trim().toUpperCase();
-    if (await db.findUserByLoginId(cleanLoginId)) {
-      res.status(400).json({ error: 'Login ID already exists.' });
-      return;
-    }
     const passwordHash = bcrypt.hashSync(password, 10);
     const owner = await db.registerOwnerInExistingOrganization({ name, loginId: cleanLoginId, email, phone, passwordHash });
     res.status(201).json({ message: 'Owner account created successfully.', user: owner });
   } catch (err: any) {
     if (err.message?.includes('already exists')) {
-      res.status(400).json({ error: 'Login ID already exists.' });
+      res.status(409).json({ error: 'Login ID already exists.' });
       return;
     }
+    console.error('[AUTH] Owner registration failed', {
+      message: err instanceof Error ? err.message : String(err),
+      ...(typeof err?.code === 'string' ? { code: err.code } : {}),
+      ...(typeof err?.details === 'string' ? { details: err.details } : {}),
+      ...(typeof err?.hint === 'string' ? { hint: err.hint } : {}),
+    });
     res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Unable to create owner account.' : err.message || 'Unable to create owner account.' });
   }
 });

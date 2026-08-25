@@ -33,6 +33,14 @@ const canonicalPhone = (phone: string): string => {
   return digits.length > 10 ? digits.slice(-10) : digits;
 };
 
+const repositoryError = (context: string, error?: { code?: string; message?: string; details?: string; hint?: string }): Error => {
+  const technical = new Error(error?.message ? `${context}: ${error.message}` : context) as Error & { code?: string; details?: string; hint?: string };
+  if (error?.code) technical.code = error.code;
+  if (error?.details) technical.details = error.details;
+  if (error?.hint) technical.hint = error.hint;
+  return technical;
+};
+
 export class DbRepository {
   private get useFallback(): boolean {
     return process.env.NODE_ENV !== 'production' && !isSupabaseConfigured();
@@ -225,13 +233,18 @@ export class DbRepository {
   }): Promise<User> {
     if (this.useFallback) return this.fallbackRepo.registerOwnerInExistingOrganization(data);
     const { data: organizations, error: organizationError } = await this.client.from('organizations').select('id').eq('is_active', true).limit(2);
-    if (organizationError || !organizations || organizations.length !== 1) throw new Error('Owner registration is not available for this CRM configuration.');
+    if (organizationError) throw repositoryError('Failed to resolve the active CRM organization', organizationError);
+    if (!organizations || organizations.length === 0) throw new Error('Owner registration configuration error: no active organization found.');
+    if (organizations.length > 1) throw new Error('Owner registration configuration error: multiple active organizations found.');
+    const organizationId = organizations[0].id;
     const cleanId = data.loginId.trim().toUpperCase();
-    if (await this.findUserByLoginId(cleanId)) throw new Error('Login ID already exists.');
+    const { data: existingUsers, error: lookupError } = await this.client.from('users').select('id').eq('organization_id', organizationId).ilike('login_id', cleanId).limit(1);
+    if (lookupError) throw repositoryError('Failed to check the owner login ID', lookupError);
+    if (existingUsers?.length) throw new Error('Login ID already exists.');
     const now = new Date().toISOString();
     const owner: User & { passwordHash: string } = {
       id: `usr_owner_${Date.now().toString().slice(-6)}_${Math.random().toString(36).substring(2, 5)}`,
-      organizationId: organizations[0].id,
+      organizationId,
       name: data.name.trim(),
       loginId: cleanId,
       role: 'OWNER',
@@ -247,7 +260,7 @@ export class DbRepository {
     const { error } = await this.client.from('users').insert(mapUserToRow(owner, owner.organizationId!));
     if (error) {
       if (error.code === '23505' || error.message?.toLowerCase().includes('duplicate')) throw new Error('Login ID already exists.');
-      throw new Error('Unable to create owner account.');
+      throw repositoryError('Failed to insert the owner account', error);
     }
     const { passwordHash: _, ...safeOwner } = owner;
     return safeOwner;
