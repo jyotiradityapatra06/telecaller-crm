@@ -153,6 +153,19 @@ telecallerRouter.post('/followups', validateRequest(scheduleFollowUpSchema), asy
       followUp,
     });
   } catch (err: any) {
+    console.error('[TELECALLER_FOLLOWUP_ERROR]', {
+      route: 'POST /api/telecaller/followups',
+      operation: 'schedule_follow_up',
+      userId: user?.id,
+      organizationId: user?.organizationId,
+      leadId,
+      dueDate,
+      dueTime,
+      message: err?.message || String(err),
+      code: err?.code,
+      details: err?.details,
+      hint: err?.hint,
+    });
     const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to schedule follow-up.';
     res.status(500).json({ error: errorMsg });
   }
@@ -192,6 +205,17 @@ telecallerRouter.patch('/followups/:id/complete', validateRequest(completeFollow
       lead: result.lead,
     });
   } catch (err: any) {
+    console.error('[TELECALLER_FOLLOWUP_COMPLETE_ERROR]', {
+      route: `PATCH /api/telecaller/followups/${id}/complete`,
+      operation: 'complete_follow_up',
+      userId: user?.id,
+      organizationId: user?.organizationId,
+      followUpId: id,
+      message: err?.message || String(err),
+      code: err?.code,
+      details: err?.details,
+      hint: err?.hint,
+    });
     const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to complete follow-up.';
     res.status(500).json({ error: errorMsg });
   }
