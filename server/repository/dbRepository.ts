@@ -1021,8 +1021,8 @@ export class DbRepository {
       p_note: data.note || null,
       p_duration_seconds: data.durationSeconds || 0,
       p_call_type: data.callType || 'CALL',
-      p_custom_fields_json: data.customFields ? JSON.parse(JSON.stringify(data.customFields)) : null,
-      p_follow_up_json: data.followUp ? JSON.parse(JSON.stringify(data.followUp)) : null,
+      p_custom_fields: data.customFields ? JSON.parse(JSON.stringify(data.customFields)) : null,
+      p_follow_up: data.followUp ? JSON.parse(JSON.stringify(data.followUp)) : null,
     });
 
     if (error) {

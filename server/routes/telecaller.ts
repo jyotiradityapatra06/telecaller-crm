@@ -106,6 +106,18 @@ telecallerRouter.post('/calls', validateRequest(recordCallSchema), async (req: A
       followUp: result.followUp,
     });
   } catch (err: any) {
+    console.error('[TELECALLER_CALL_ERROR]', {
+      route: 'POST /api/telecaller/calls',
+      operation: 'record_call_activity',
+      userId: user?.id,
+      organizationId: user?.organizationId,
+      leadId,
+      status,
+      message: err?.message || String(err),
+      code: err?.code,
+      details: err?.details,
+      hint: err?.hint,
+    });
     const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to record call activity.';
     res.status(500).json({ error: errorMsg });
   }
