@@ -52,7 +52,7 @@ export const createTelecallerSchema = z.object({
   name: z.string().min(1, 'Name is required').max(255),
   loginId: z.string().max(100).optional(),
   password: z.string().min(4, 'Password must be at least 4 characters').max(255).optional(),
-  brandAccess: z.enum(['APNI_VIDYA', 'APNI_ESTATE', 'BOTH']),
+  brandAccess: z.enum(['APNI_VIDYA', 'APNI_ESTATE']),
   phone: z.string().max(50).optional(),
   email: z.string().max(255).optional(),
   dailyTarget: z.number().int().min(1).max(1000).optional(),
@@ -62,7 +62,7 @@ export const updateTelecallerSchema = z.object({
   name: z.string().max(255).optional(),
   phone: z.string().max(50).optional(),
   email: z.string().max(255).optional(),
-  brandAccess: z.enum(['APNI_VIDYA', 'APNI_ESTATE', 'BOTH']).optional(),
+  brandAccess: z.enum(['APNI_VIDYA', 'APNI_ESTATE']).optional(),
   dailyTarget: z.number().int().min(1).max(1000).optional(),
   isActive: z.boolean().optional(),
   password: z.string().max(255).optional(),
@@ -138,9 +138,28 @@ export const importLeadsSchema = z.object({
       })
     )
     .max(5000, 'Maximum 5000 leads per import batch allowed.'),
-  assignedToTelecallerId: z.string().nullable().optional(),
+  assignedTelecallerId: z.string().nullable().optional(),
   defaultBrand: z.enum(['APNI_VIDYA', 'APNI_ESTATE']).optional(),
 });
+
+export const createHrSchema = z.object({
+  name: z.string().min(1).max(255),
+  loginId: z.string().min(3).max(100).regex(/^[a-zA-Z0-9_-]+$/),
+  password: z.string().min(8).max(255),
+  brandAccess: z.enum(['APNI_VIDYA', 'APNI_ESTATE']),
+  phone: z.string().max(50).optional(),
+  email: z.string().max(255).optional(),
+});
+
+export const updateHrSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  brandAccess: z.enum(['APNI_VIDYA', 'APNI_ESTATE']).optional(),
+  phone: z.string().max(50).optional(),
+  email: z.string().max(255).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const resetPasswordSchema = z.object({ password: z.string().min(8).max(255).optional() });
 
 // 4. Telecaller Action Schemas
 export const recordCallSchema = z.object({

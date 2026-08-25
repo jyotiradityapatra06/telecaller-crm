@@ -24,8 +24,14 @@ import {
   mapFollowUpToRow,
   mapLeadHistoryFromRow,
 } from './mapper';
+import { assertCanManageTelecaller, assertLeadAccess, assertManagement, scopedBrand } from '../authorization';
 
 let cachedDevFallback: any = null;
+
+const canonicalPhone = (phone: string): string => {
+  const digits = phone.replace(/\D/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+};
 
 export class DbRepository {
   private get useFallback(): boolean {
@@ -91,7 +97,9 @@ export class DbRepository {
     if (!user) {
       throw new Error('Unauthorized: User context required to fetch telecallers.');
     }
+    assertManagement(user);
     const orgId = this.getOrganizationId(user);
+    const effectiveBrand = scopedBrand(user, brandFilter);
     const { data, error } = await this.client
       .from('users')
       .select('*')
@@ -103,8 +111,8 @@ export class DbRepository {
     return data
       .map(mapUserFromRow)
       .filter((u) => {
-        if (!brandFilter || brandFilter === 'ALL') return true;
-        return u.brandAccess === brandFilter || u.brandAccess === 'BOTH';
+        if (effectiveBrand === 'ALL') return true;
+        return u.brandAccess === effectiveBrand;
       })
       .map(({ passwordHash, ...safeUser }) => safeUser);
   }
@@ -184,7 +192,7 @@ export class DbRepository {
       organizationId: orgId,
       name: data.companyName.trim(),
       loginId: cleanId,
-      role: 'ADMIN',
+      role: 'OWNER',
       brandAccess: 'BOTH',
       dailyTarget: 100,
       phone: data.phone?.trim() || '+91 90000 00000',
@@ -206,6 +214,62 @@ export class DbRepository {
 
     const { passwordHash: _, ...safeUser } = newAdmin;
     return safeUser;
+  }
+
+  public async getHrs(owner: User): Promise<User[]> {
+    if (this.useFallback) return this.fallbackRepo.getHrs(owner);
+    if (owner.role !== 'OWNER') throw new Error('Forbidden: Owner authorization required.');
+    const { data, error } = await this.client.from('users').select('*').eq('organization_id', this.getOrganizationId(owner)).eq('role', 'HR');
+    if (error) throw new Error(`Failed to list HR accounts: ${error.message}`);
+    return (data || []).map(mapUserFromRow).map(({ passwordHash, ...user }) => user);
+  }
+
+  public async createHr(data: { name: string; loginId: string; password: string; brandAccess: BusinessBrand; phone?: string; email?: string }, owner: User): Promise<User> {
+    if (this.useFallback) return this.fallbackRepo.createHr(data, owner);
+    if (owner.role !== 'OWNER') throw new Error('Forbidden: Owner authorization required.');
+    const orgId = this.getOrganizationId(owner);
+    const loginId = data.loginId.trim().toUpperCase();
+    if (await this.findUserByLoginId(loginId, orgId)) throw new Error('Login ID already exists.');
+    const now = new Date().toISOString();
+    const user: User & { passwordHash: string } = {
+      id: `usr_hr_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`, organizationId: orgId,
+      name: data.name.trim(), loginId, role: 'HR', brandAccess: data.brandAccess, dailyTarget: 0,
+      phone: data.phone?.trim() || '', email: data.email?.trim() || '', isActive: true,
+      passwordHash: bcrypt.hashSync(data.password.trim(), 10), createdAt: now, updatedAt: now,
+    };
+    const { error } = await this.client.from('users').insert(mapUserToRow(user, orgId));
+    if (error) throw new Error(`Failed to create HR account: ${error.message}`);
+    const { passwordHash: _, ...safe } = user;
+    return safe;
+  }
+
+  public async updateHr(id: string, updates: Partial<Pick<User, 'name' | 'phone' | 'email' | 'brandAccess' | 'isActive'>>, owner: User): Promise<User> {
+    if (this.useFallback) return this.fallbackRepo.updateHr(id, updates, owner);
+    if (owner.role !== 'OWNER') throw new Error('Forbidden: Owner authorization required.');
+    const existing = await this.findUserById(id, owner);
+    if (!existing || existing.role !== 'HR') throw new Error('HR account not found.');
+    const payload: any = { updated_at: new Date().toISOString() };
+    if (updates.name !== undefined) payload.name = updates.name.trim();
+    if (updates.phone !== undefined) payload.phone = updates.phone.trim();
+    if (updates.email !== undefined) payload.email = updates.email.trim();
+    if (updates.brandAccess !== undefined) payload.brand_access = updates.brandAccess;
+    if (updates.isActive !== undefined) payload.is_active = updates.isActive;
+    const { data, error } = await this.client.from('users').update(payload).eq('organization_id', this.getOrganizationId(owner)).eq('id', id).eq('role', 'HR').select().single();
+    if (error || !data) throw new Error('Failed to update HR account.');
+    const { passwordHash: _, ...safe } = mapUserFromRow(data);
+    return safe;
+  }
+
+  public async resetHrPassword(id: string, password: string | undefined, owner: User): Promise<{ user: User; temporaryPassword: string }> {
+    if (this.useFallback) return this.fallbackRepo.resetHrPassword(id, password, owner);
+    if (owner.role !== 'OWNER') throw new Error('Forbidden: Owner authorization required.');
+    const existing = await this.findUserById(id, owner);
+    if (!existing || existing.role !== 'HR') throw new Error('HR account not found.');
+    const temporaryPassword = password?.trim() || this.generateTemporaryPassword();
+    const { data, error } = await this.client.from('users').update({ password_hash: bcrypt.hashSync(temporaryPassword, 10), updated_at: new Date().toISOString() }).eq('organization_id', this.getOrganizationId(owner)).eq('id', id).eq('role', 'HR').select().single();
+    if (error || !data) throw new Error('Failed to reset HR password.');
+    const { passwordHash: _, ...user } = mapUserFromRow(data);
+    return { user, temporaryPassword };
   }
 
   private async generateNextLoginId(brandAccess: BrandAccess, adminUser: User): Promise<string> {
@@ -258,9 +322,11 @@ export class DbRepository {
     if (!adminUser) {
       throw new Error('Unauthorized: Admin user context required to create telecaller.');
     }
+    assertManagement(adminUser);
 
     const orgId = this.getOrganizationId(adminUser);
-    const brandAccess = data.brandAccess || 'APNI_VIDYA';
+    const brandAccess = adminUser.role === 'HR' ? adminUser.brandAccess : data.brandAccess;
+    if (brandAccess === 'BOTH') throw new Error('Forbidden: Telecaller brand must be APNI_VIDYA or APNI_ESTATE.');
 
     const finalLoginId = data.loginId?.trim()
       ? data.loginId.trim().toUpperCase()
@@ -330,6 +396,10 @@ export class DbRepository {
     if (!user) {
       throw new Error(`Telecaller not found with ID: ${id}`);
     }
+    assertCanManageTelecaller(adminUser, user);
+    if (updates.brandAccess === 'BOTH' || (adminUser.role === 'HR' && updates.brandAccess && updates.brandAccess !== adminUser.brandAccess)) {
+      throw new Error('Forbidden: Cannot move telecaller outside your brand scope.');
+    }
 
     const updatePayload: any = {
       updated_at: new Date().toISOString(),
@@ -389,6 +459,7 @@ export class DbRepository {
     if (user.role !== 'TELECALLER') {
       throw new Error('Forbidden: Cannot reset password for non-telecaller account.');
     }
+    assertCanManageTelecaller(adminUser, mapUserFromRow(user));
 
     const plainPassword = this.generateTemporaryPassword();
     const salt = bcrypt.genSaltSync(10);
@@ -425,8 +496,8 @@ export class DbRepository {
     }
     const orgId = this.getOrganizationId(userContext);
 
-    // Strict boundary: Users can only update their own password unless they are ADMIN
-    if (userContext.role !== 'ADMIN' && userContext.id !== userId) {
+    // Strict boundary: Users can only update their own password unless they are OWNER.
+    if (userContext.role !== 'OWNER' && userContext.id !== userId) {
       throw new Error('Forbidden: You can only update your own password.');
     }
 
@@ -448,6 +519,9 @@ export class DbRepository {
       throw new Error('Unauthorized: Admin user context required to delete telecaller.');
     }
     const orgId = this.getOrganizationId(adminUser);
+    const target = await this.findUserById(id, adminUser);
+    if (!target) throw new Error(`Telecaller not found with ID: ${id}`);
+    assertCanManageTelecaller(adminUser, target);
     const adminId = adminUser.id;
 
     // Call Atomic RPC - Must fail closed without sequential fallback in production
@@ -479,13 +553,16 @@ export class DbRepository {
       throw new Error('Unauthorized: User context required to retrieve leads.');
     }
     const orgId = this.getOrganizationId(userContext);
+    const effectiveBrand = scopedBrand(userContext, filter?.brand);
     await this.recalculateFollowUpStatuses(orgId);
 
     let query = this.client.from('leads').select('*').eq('organization_id', orgId);
 
-    if (filter?.brand && filter.brand !== 'ALL') {
-      query = query.eq('brand', filter.brand);
+    if (effectiveBrand !== 'ALL') {
+      query = query.eq('brand', effectiveBrand);
     }
+
+    if (userContext.role === 'TELECALLER') query = query.eq('assigned_to', userContext.id);
 
     if (filter?.assignedTo !== undefined) {
       if (filter.assignedTo === 'UNASSIGNED') {
@@ -613,6 +690,7 @@ export class DbRepository {
     const users = await this.getAllUsers(userContext);
     const userMap = new Map(users.map((u) => [u.id, u]));
     const lead = mapLeadFromRow(data, userMap);
+    assertLeadAccess(userContext, lead);
 
     return this.enrichLead(lead, userMap, orgId);
   }
@@ -659,23 +737,33 @@ export class DbRepository {
   // --- BATCH IMPORT LEADS ---
   public async importLeads(
     rows: ParsedLeadRow[],
-    assignedToTelecallerId?: string | null,
+    assignedTelecallerId?: string | null,
     adminUser?: User,
     defaultBrand?: BusinessBrand
   ): Promise<{ importedCount: number; failedCount: number; leads: Lead[] }> {
-    if (this.useFallback) return this.fallbackRepo.importLeads(rows, assignedToTelecallerId, adminUser, defaultBrand);
+    if (this.useFallback) return this.fallbackRepo.importLeads(rows, assignedTelecallerId, adminUser, defaultBrand);
     if (!adminUser) {
       throw new Error('Unauthorized: Admin user context required for lead import.');
     }
+    assertManagement(adminUser);
+    if (adminUser.role === 'HR' && !assignedTelecallerId) {
+      throw new Error('Please select a telecaller before uploading leads.');
+    }
     const orgId = this.getOrganizationId(adminUser);
+    const effectiveDefaultBrand = scopedBrand(adminUser, defaultBrand);
     const now = new Date();
     const importedLeads: Lead[] = [];
     let importedCount = 0;
     let failedCount = 0;
 
     const users = await this.getAllUsers(adminUser);
-    const tc = assignedToTelecallerId ? users.find((u) => u.id === assignedToTelecallerId) : null;
+    const tc = assignedTelecallerId ? users.find((u) => u.id === assignedTelecallerId) : null;
+    if (assignedTelecallerId && !tc) throw new Error('Assigned telecaller does not exist in your organization.');
+    if (tc) assertCanManageTelecaller(adminUser, tc);
+    if (tc && !tc.isActive) throw new Error('Cannot assign leads to an inactive telecaller.');
     const admin = adminUser;
+    const existingPhones = new Set((await this.getAllLeads({ brand: effectiveDefaultBrand }, adminUser)).map((lead) => `${lead.brand}:${canonicalPhone(lead.phone)}`));
+    const batchPhones = new Set<string>();
 
     const leadRowsToInsert: any[] = [];
     const historyRowsToInsert: any[] = [];
@@ -687,7 +775,15 @@ export class DbRepository {
         return;
       }
 
-      const brand: BusinessBrand = row.brand || defaultBrand || (row.courseInterest ? 'APNI_VIDYA' : 'APNI_ESTATE');
+      const requestedBrand = adminUser.role === 'HR' ? adminUser.brandAccess as BusinessBrand : row.brand || effectiveDefaultBrand;
+      const brand: BusinessBrand = (requestedBrand === 'ALL' ? (row.courseInterest ? 'APNI_VIDYA' : 'APNI_ESTATE') : requestedBrand) as BusinessBrand;
+      if (tc && tc.brandAccess !== brand) throw new Error('Forbidden: Imported lead brand must match selected telecaller brand.');
+      const phoneKey = `${brand}:${canonicalPhone(row.phone)}`;
+      if (existingPhones.has(phoneKey) || batchPhones.has(phoneKey)) {
+        failedCount++;
+        return;
+      }
+      batchPhones.add(phoneKey);
       const leadId = `lead_${brand.toLowerCase()}_imp_${Date.now()}_${i}`;
 
       const newLead: Lead = {
@@ -775,7 +871,17 @@ export class DbRepository {
     if (!adminUser) {
       throw new Error('Unauthorized: Admin user context required to assign leads.');
     }
+    assertManagement(adminUser);
     const orgId = this.getOrganizationId(adminUser);
+    const leads = await Promise.all(leadIds.map((id) => this.getLeadById(id, adminUser)));
+    if (leads.some((lead) => !lead)) throw new Error('Forbidden: One or more leads are outside your scope.');
+    if (telecallerId) {
+      const target = await this.findUserById(telecallerId, adminUser);
+      if (!target) throw new Error('Forbidden: Target telecaller does not belong to your organization.');
+      assertCanManageTelecaller(adminUser, target);
+      if (!target.isActive) throw new Error('Cannot assign leads to an inactive telecaller.');
+      if (leads.some((lead) => lead!.brand !== target.brandAccess)) throw new Error('Forbidden: Lead and telecaller brands must match.');
+    }
 
     // Call Atomic RPC - Fail closed
     const { data, error } = await this.client.rpc('assign_leads_atomic', {
@@ -803,12 +909,14 @@ export class DbRepository {
     if (!adminUser) {
       throw new Error('Unauthorized: Admin user context required for auto-distribution.');
     }
+    assertManagement(adminUser);
     const orgId = this.getOrganizationId(adminUser);
     const adminId = adminUser.id;
+    const effectiveBrand = scopedBrand(adminUser, brandFilter);
 
     const { data, error } = await this.client.rpc('auto_distribute_leads_atomic', {
       p_org_id: orgId,
-      p_brand_filter: brandFilter || 'ALL',
+      p_brand_filter: effectiveBrand,
       p_admin_id: adminId,
     });
 
@@ -846,6 +954,10 @@ export class DbRepository {
     if (!userContext) {
       throw new Error('Unauthorized: User context required to record call activity.');
     }
+    if (userContext.role !== 'TELECALLER' || data.telecallerId !== userContext.id) {
+      throw new Error('Forbidden: Calls can only be recorded by the authenticated telecaller.');
+    }
+    await this.getLeadById(data.leadId, userContext);
     const orgId = this.getOrganizationId(userContext);
 
     const { data: rpcData, error } = await this.client.rpc('record_call_activity_atomic', {
@@ -915,6 +1027,10 @@ export class DbRepository {
     if (!userContext) {
       throw new Error('Unauthorized: User context required to schedule follow-up.');
     }
+    if (userContext.role !== 'TELECALLER' || data.telecallerId !== userContext.id) {
+      throw new Error('Forbidden: Follow-ups can only be scheduled by the authenticated telecaller.');
+    }
+    await this.getLeadById(data.leadId, userContext);
     const orgId = this.getOrganizationId(userContext);
 
     const { data: rpcData, error } = await this.client.rpc('schedule_follow_up_atomic', {
@@ -958,6 +1074,7 @@ export class DbRepository {
     if (!user) {
       throw new Error('Unauthorized: User context required to complete follow-up.');
     }
+    if (user.role !== 'TELECALLER') throw new Error('Forbidden: Telecaller authorization required.');
     const orgId = this.getOrganizationId(user);
 
     const { data: rpcData, error } = await this.client.rpc('complete_follow_up_atomic', {
@@ -1002,12 +1119,15 @@ export class DbRepository {
       throw new Error('Unauthorized: User context required to fetch follow-ups.');
     }
     const orgId = this.getOrganizationId(userContext);
+    const effectiveBrand = scopedBrand(userContext, brandFilter);
     await this.recalculateFollowUpStatuses(orgId);
 
     const todayStr = new Date().toISOString().split('T')[0];
     let query = this.client.from('follow_ups').select('*').eq('organization_id', orgId);
 
-    if (telecallerId) {
+    if (userContext.role === 'TELECALLER') {
+      query = query.eq('telecaller_id', userContext.id);
+    } else if (telecallerId) {
       query = query.eq('telecaller_id', telecallerId);
     }
 
@@ -1022,7 +1142,7 @@ export class DbRepository {
     const filtered = fuRows
       .map((r) => mapFollowUpFromRow(r, leadMap, userMap))
       .filter((f) => {
-        if (brandFilter && brandFilter !== 'ALL' && f.brand && f.brand !== brandFilter) return false;
+        if (effectiveBrand !== 'ALL' && f.brand && f.brand !== effectiveBrand) return false;
         return true;
       });
 
@@ -1080,6 +1200,7 @@ export class DbRepository {
       throw new Error('Unauthorized: User context required to fetch lead history.');
     }
     const orgId = this.getOrganizationId(userContext);
+    await this.getLeadById(leadId, userContext);
     const { data: rows } = await this.client
       .from('lead_history')
       .select('*')
@@ -1094,18 +1215,20 @@ export class DbRepository {
     return rows.map((r) => mapLeadHistoryFromRow(r, userMap));
   }
 
-  // --- ADMIN METRICS ---
+  // --- MANAGEMENT METRICS ---
   public async getAdminMetrics(brandFilter?: 'ALL' | BusinessBrand, userContext?: User): Promise<AdminMetrics> {
     if (this.useFallback) return this.fallbackRepo.getAdminMetrics(brandFilter, userContext);
     if (!userContext) {
       throw new Error('Unauthorized: User context required to fetch admin metrics.');
     }
+    assertManagement(userContext);
     const orgId = this.getOrganizationId(userContext);
     await this.recalculateFollowUpStatuses(orgId);
     const todayStr = new Date().toISOString().split('T')[0];
 
-    const allLeads = await this.getAllLeads(undefined, userContext);
-    const filteredLeads = brandFilter && brandFilter !== 'ALL' ? allLeads.filter((l) => l.brand === brandFilter) : allLeads;
+    const effectiveBrand = scopedBrand(userContext, brandFilter);
+    const allLeads = await this.getAllLeads({ brand: effectiveBrand }, userContext);
+    const filteredLeads = allLeads;
 
     const totalLeads = filteredLeads.length;
     const vidyaLeads = allLeads.filter((l) => l.brand === 'APNI_VIDYA').length;
@@ -1118,16 +1241,13 @@ export class DbRepository {
       .select('*')
       .eq('organization_id', orgId);
 
-    const callsList = allCalls || [];
+    const scopedLeadIds = new Set(filteredLeads.map((lead) => lead.id));
+    const callsList = (allCalls || []).filter((call) => scopedLeadIds.has(call.lead_id));
     const callsMade = callsList.length;
 
     const callsToday = callsList.filter((c) => {
       const calledAtStr = c.called_at || c.created_at || '';
       if (!calledAtStr.startsWith(todayStr)) return false;
-      if (brandFilter && brandFilter !== 'ALL') {
-        const l = allLeads.find((x) => x.id === c.lead_id);
-        return l?.brand === brandFilter;
-      }
       return true;
     }).length;
 
@@ -1237,6 +1357,9 @@ export class DbRepository {
     }
     const orgId = this.getOrganizationId(userContext);
     const tc = await this.findUserById(telecallerId, userContext);
+    if (!tc || tc.role !== 'TELECALLER') throw new Error('Telecaller not found.');
+    if (userContext.role === 'TELECALLER' && telecallerId !== userContext.id) throw new Error('Forbidden: Personal metrics only.');
+    if (userContext.role === 'HR') assertCanManageTelecaller(userContext, tc);
     const todayStr = new Date().toISOString().split('T')[0];
 
     const assignedLeadsList = await this.getAllLeads({ assignedTo: telecallerId }, userContext);

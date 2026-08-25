@@ -3,7 +3,7 @@ import { LayoutDashboard, Users, UserCheck, Upload, PhoneCall, Clock, User } fro
 import { soundManager } from '../../lib/sound';
 
 interface BottomNavProps {
-  role: 'admin' | 'telecaller';
+  role: 'owner' | 'hr' | 'telecaller';
   currentTab: string;
   onSelectTab: (tab: string) => void;
   followUpBadgeCount?: number;
@@ -70,15 +70,22 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       badge: followUpBadgeCount,
       badgeColor: 'bg-rose-600',
     },
-    {
-      id: 'profile',
-      label: 'Performance',
-      icon: <User className="w-5 h-5" />,
-      badge: 0,
-    },
   ];
 
-  const tabs = role === 'admin' ? adminTabs : telecallerTabs;
+  const ownerTabs = [
+    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" />, badge: 0 },
+    { id: 'companies', label: 'Companies', icon: <Users className="w-5 h-5" />, badge: 0 },
+    { id: 'hrs', label: 'HR', icon: <UserCheck className="w-5 h-5" />, badge: 0 },
+    { id: 'reports', label: 'Reports', icon: <User className="w-5 h-5" />, badge: 0 },
+  ];
+  const hrTabs = [
+    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" />, badge: 0 },
+    { id: 'telecallers', label: 'Team', icon: <UserCheck className="w-5 h-5" />, badge: 0 },
+    { id: 'upload', label: 'Upload', icon: <Upload className="w-5 h-5" />, badge: 0 },
+    { id: 'followups', label: 'Follow-ups', icon: <Clock className="w-5 h-5" />, badge: followUpBadgeCount, badgeColor: 'bg-rose-600' },
+  ];
+
+  const tabs: any[] = role === 'owner' ? ownerTabs : role === 'hr' ? hrTabs : telecallerTabs;
 
   return (
     <nav

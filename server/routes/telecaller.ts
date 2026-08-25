@@ -78,12 +78,12 @@ telecallerRouter.post('/calls', validateRequest(recordCallSchema), async (req: A
       return;
     }
 
-    if (user.role !== 'ADMIN' && lead.assignedTo !== user.id) {
+    if (lead.assignedTo !== user.id) {
       res.status(403).json({ error: 'Forbidden: You can only record calls for leads assigned to you.' });
       return;
     }
 
-    if (user.role !== 'ADMIN' && user.brandAccess !== 'BOTH' && lead.brand !== user.brandAccess) {
+    if (lead.brand !== user.brandAccess) {
       res.status(403).json({ error: `Forbidden: You do not have permission to access leads from [${lead.brand}].` });
       return;
     }
@@ -123,7 +123,7 @@ telecallerRouter.post('/followups', validateRequest(scheduleFollowUpSchema), asy
       return;
     }
 
-    if (user.role !== 'ADMIN' && lead.assignedTo !== user.id) {
+    if (lead.assignedTo !== user.id) {
       res.status(403).json({ error: 'Forbidden: You can only schedule follow-ups for leads assigned to you.' });
       return;
     }
@@ -154,7 +154,7 @@ telecallerRouter.patch('/followups/:id/complete', validateRequest(completeFollow
   const noteToUse = completionNote || note;
 
   try {
-    const followUpsObj = await db.getFollowUps(user.role === 'ADMIN' ? undefined : user.id, 'ALL', user);
+    const followUpsObj = await db.getFollowUps(user.id, 'ALL', user);
     const allFollowUps = [
       ...followUpsObj.overdue,
       ...followUpsObj.today,
@@ -168,7 +168,7 @@ telecallerRouter.patch('/followups/:id/complete', validateRequest(completeFollow
       return;
     }
 
-    if (user.role !== 'ADMIN' && targetFu.telecallerId !== user.id) {
+    if (targetFu.telecallerId !== user.id) {
       res.status(403).json({ error: 'Forbidden: You are not authorized to complete this follow-up.' });
       return;
     }

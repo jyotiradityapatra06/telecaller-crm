@@ -26,7 +26,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onLogout,
 }) => {
   const isSoundOn = soundManager.isEnabled();
-  const isAdmin = currentUser.role === 'ADMIN';
+  const isAdmin = currentUser.role !== 'TELECALLER';
 
   const handleToggleSound = () => {
     soundManager.toggleMute();

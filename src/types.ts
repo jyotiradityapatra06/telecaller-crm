@@ -1,4 +1,4 @@
-export type UserRole = 'ADMIN' | 'TELECALLER';
+export type UserRole = 'OWNER' | 'HR' | 'TELECALLER';
 export type AppRole = 'admin' | 'telecaller';
 
 export type BusinessBrand = 'APNI_VIDYA' | 'APNI_ESTATE';

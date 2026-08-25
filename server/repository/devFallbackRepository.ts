@@ -15,6 +15,12 @@ import {
   TelecallerMetrics,
   ParsedLeadRow,
 } from '../../src/types';
+import { assertCanManageTelecaller, assertLeadAccess, assertManagement, scopedBrand } from '../authorization';
+
+const canonicalPhone = (phone: string): string => {
+  const digits = phone.replace(/\D/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+};
 
 // ============================================================================
 // DEVELOPMENT-ONLY LOCAL REPOSITORY FALLBACK
@@ -80,6 +86,8 @@ export class DevFallbackRepository {
           this.users = data.users.map((u: any) => ({
             ...u,
             organizationId: u.organizationId || 'org_demo_001',
+            role: u.role === 'ADMIN' ? 'OWNER' : u.role,
+            brandAccess: u.role === 'ADMIN' ? 'BOTH' : u.brandAccess,
           }));
 
           this.leads = (data.leads || []).map((l: any) => ({
@@ -158,7 +166,7 @@ export class DevFallbackRepository {
         id: 'usr_admin_001',
         name: 'Master Admin HQ',
         loginId: 'admin',
-        role: 'ADMIN',
+        role: 'OWNER',
         brandAccess: 'BOTH',
         dailyTarget: 50,
         phone: '+91 98765 43210',
@@ -229,7 +237,7 @@ export class DevFallbackRepository {
         name: 'Vikram Malhotra',
         loginId: 'TC_DUAL_1',
         role: 'TELECALLER',
-        brandAccess: 'BOTH',
+        brandAccess: 'APNI_VIDYA',
         dailyTarget: 50,
         phone: '+91 98555 66778',
         email: 'vikram.dual@apnicrm.com',
@@ -256,11 +264,13 @@ export class DevFallbackRepository {
   public async getTelecallers(brandFilter?: 'ALL' | BusinessBrand, user?: User): Promise<User[]> {
     this.ensureLoaded();
     const orgId = this.getOrganizationId(user);
+    assertManagement(user!);
+    const effectiveBrand = scopedBrand(user!, brandFilter);
     return this.users
       .filter((u) => u.organizationId === orgId && u.role === 'TELECALLER')
       .filter((u) => {
-        if (!brandFilter || brandFilter === 'ALL') return true;
-        return u.brandAccess === brandFilter || u.brandAccess === 'BOTH';
+        if (effectiveBrand === 'ALL') return true;
+        return u.brandAccess === effectiveBrand;
       })
       .map(({ passwordHash: _, ...safeUser }) => safeUser);
   }
@@ -341,7 +351,7 @@ export class DevFallbackRepository {
       organizationId: orgId,
       name: data.companyName.trim(),
       loginId: cleanId,
-      role: 'ADMIN',
+      role: 'OWNER',
       brandAccess: 'BOTH',
       dailyTarget: 100,
       phone: data.phone?.trim() || '+91 90000 00000',
@@ -383,6 +393,35 @@ export class DevFallbackRepository {
     return `${prefix}_${formatted}`;
   }
 
+  public async getHrs(owner: User): Promise<User[]> {
+    this.ensureLoaded();
+    if (owner.role !== 'OWNER') throw new Error('Forbidden: Owner authorization required.');
+    return this.users.filter((u) => u.organizationId === owner.organizationId && u.role === 'HR').map(({ passwordHash: _, ...u }) => u);
+  }
+
+  public async createHr(data: { name: string; loginId: string; password: string; brandAccess: BusinessBrand; phone?: string; email?: string }, owner: User): Promise<User> {
+    this.ensureLoaded();
+    if (owner.role !== 'OWNER') throw new Error('Forbidden: Owner authorization required.');
+    if (await this.findUserByLoginId(data.loginId)) throw new Error('Login ID already exists.');
+    const now = new Date().toISOString();
+    const user: User & { passwordHash: string } = { id: `usr_hr_${Date.now()}`, organizationId: this.getOrganizationId(owner), name: data.name.trim(), loginId: data.loginId.trim().toUpperCase(), role: 'HR', brandAccess: data.brandAccess, dailyTarget: 0, phone: data.phone || '', email: data.email || '', isActive: true, passwordHash: bcrypt.hashSync(data.password, 10), createdAt: now, updatedAt: now };
+    this.users.push(user); this.persistToDisk(); const { passwordHash: _, ...safe } = user; return safe;
+  }
+
+  public async updateHr(id: string, updates: any, owner: User): Promise<User> {
+    this.ensureLoaded(); if (owner.role !== 'OWNER') throw new Error('Forbidden: Owner authorization required.');
+    const user = this.users.find((u) => u.id === id && u.organizationId === owner.organizationId && u.role === 'HR');
+    if (!user) throw new Error('HR account not found.');
+    Object.assign(user, updates, { updatedAt: new Date().toISOString() }); this.persistToDisk(); const { passwordHash: _, ...safe } = user; return safe;
+  }
+
+  public async resetHrPassword(id: string, password: string | undefined, owner: User): Promise<{ user: User; temporaryPassword: string }> {
+    this.ensureLoaded(); if (owner.role !== 'OWNER') throw new Error('Forbidden: Owner authorization required.');
+    const user = this.users.find((u) => u.id === id && u.organizationId === owner.organizationId && u.role === 'HR');
+    if (!user) throw new Error('HR account not found.');
+    const temporaryPassword = password || this.generateTemporaryPassword(); user.passwordHash = bcrypt.hashSync(temporaryPassword, 10); this.persistToDisk(); const { passwordHash: _, ...safe } = user; return { user: safe, temporaryPassword };
+  }
+
   private generateTemporaryPassword(): string {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
@@ -407,8 +446,9 @@ export class DevFallbackRepository {
   ): Promise<{ user: User; temporaryPassword?: string }> {
     this.ensureLoaded();
     const orgId = this.getOrganizationId(adminUser);
-
-    const brandAccess = data.brandAccess || 'APNI_VIDYA';
+    assertManagement(adminUser!);
+    const brandAccess = adminUser!.role === 'HR' ? adminUser!.brandAccess : data.brandAccess;
+    if (brandAccess === 'BOTH') throw new Error('Forbidden: Telecaller cannot have BOTH brand access.');
     const finalLoginId = data.loginId?.trim()
       ? data.loginId.trim().toUpperCase()
       : this.generateNextLoginId(brandAccess, adminUser);
@@ -470,6 +510,8 @@ export class DevFallbackRepository {
     if (!user) {
       throw new Error(`Telecaller not found with ID: ${id}`);
     }
+    assertCanManageTelecaller(adminUser!, user);
+    if (updates.brandAccess === 'BOTH' || (adminUser!.role === 'HR' && updates.brandAccess && updates.brandAccess !== adminUser!.brandAccess)) throw new Error('Forbidden: Cannot move telecaller outside your brand scope.');
 
     if (updates.name !== undefined) user.name = updates.name.trim();
     if (updates.phone !== undefined) user.phone = updates.phone.trim();
@@ -497,6 +539,7 @@ export class DevFallbackRepository {
     if (idx === -1) {
       return { success: false, unassignedLeadsCount: 0 };
     }
+    assertCanManageTelecaller(adminUser!, this.users[idx]);
 
     this.users.splice(idx, 1);
 
@@ -527,6 +570,7 @@ export class DevFallbackRepository {
     if (user.role !== 'TELECALLER') {
       throw new Error('Forbidden: Cannot reset password for non-telecaller account.');
     }
+    assertCanManageTelecaller(adminUser!, user);
 
     const plainPassword = this.generateTemporaryPassword();
     const salt = bcrypt.genSaltSync(10);
@@ -563,7 +607,7 @@ export class DevFallbackRepository {
       throw new Error('Unauthorized: User context required to update user password.');
     }
     const orgId = this.getOrganizationId(userContext);
-    if (userContext.role !== 'ADMIN' && userContext.id !== userId) {
+    if (userContext.role !== 'OWNER' && userContext.id !== userId) {
       throw new Error('Forbidden: You can only update your own password.');
     }
     const user = this.users.find((u) => u.id === userId && u.organizationId === orgId);
@@ -583,6 +627,7 @@ export class DevFallbackRepository {
       throw new Error('Unauthorized: User context required to retrieve leads.');
     }
     const orgId = this.getOrganizationId(userContext);
+    const effectiveBrand = scopedBrand(userContext, filter?.brand);
     let result = this.leads.filter((l) => l.organizationId === orgId);
 
     if (userContext && userContext.role === 'TELECALLER') {
@@ -591,10 +636,11 @@ export class DevFallbackRepository {
         result = result.filter((l) => l.brand === userContext.brandAccess);
       }
     }
+    if (effectiveBrand !== 'ALL') result = result.filter((l) => l.brand === effectiveBrand);
 
     if (filter) {
-      if (filter.brand && filter.brand !== 'ALL') {
-        result = result.filter((l) => l.brand === filter.brand);
+      if (effectiveBrand !== 'ALL') {
+        result = result.filter((l) => l.brand === effectiveBrand);
       }
       if (filter.assignedTo) {
         if (filter.assignedTo === 'UNASSIGNED') {
@@ -641,6 +687,7 @@ export class DevFallbackRepository {
     const orgId = this.getOrganizationId(userContext);
     const lead = this.leads.find((l) => l.id === id && l.organizationId === orgId);
     if (!lead) return undefined;
+    assertLeadAccess(userContext, lead);
 
     const callLogs = this.callActivities.filter((c) => c.leadId === id && c.organizationId === orgId);
     const followUps = this.followUps.filter((f) => f.leadId === id && f.organizationId === orgId);
@@ -661,22 +708,28 @@ export class DevFallbackRepository {
 
   public async importLeads(
     rows: ParsedLeadRow[],
-    assignedToTelecallerId?: string | null,
+    assignedTelecallerId?: string | null,
     adminUser?: User,
     defaultBrand?: BusinessBrand
   ): Promise<{ importedCount: number; failedCount: number; leads: Lead[]; message: string }> {
     this.ensureLoaded();
     const orgId = this.getOrganizationId(adminUser);
+    assertManagement(adminUser!);
+    if (adminUser!.role === 'HR' && !assignedTelecallerId) throw new Error('Please select a telecaller before uploading leads.');
     const adminName = adminUser?.name || 'Master Admin HQ';
     const adminId = adminUser?.id || 'usr_admin_001';
 
     let assignedTc: User | undefined;
-    if (assignedToTelecallerId) {
-      assignedTc = this.users.find((u) => u.id === assignedToTelecallerId && u.organizationId === orgId);
+    if (assignedTelecallerId) {
+      assignedTc = this.users.find((u) => u.id === assignedTelecallerId && u.organizationId === orgId);
       if (!assignedTc) {
         throw new Error('Assigned telecaller does not exist in your organization.');
       }
+      assertCanManageTelecaller(adminUser!, assignedTc);
+      if (!assignedTc.isActive) throw new Error('Cannot assign leads to an inactive telecaller.');
     }
+    const existingPhones = new Set(this.leads.filter((lead) => lead.organizationId === orgId).map((lead) => `${lead.brand}:${canonicalPhone(lead.phone)}`));
+    const batchPhones = new Set<string>();
 
     let importedCount = 0;
     let failedCount = 0;
@@ -690,7 +743,11 @@ export class DevFallbackRepository {
         continue;
       }
 
-      const brand = r.brand || defaultBrand || 'APNI_VIDYA';
+      const brand = adminUser!.role === 'HR' ? adminUser!.brandAccess as BusinessBrand : r.brand || defaultBrand || 'APNI_VIDYA';
+      if (assignedTc && assignedTc.brandAccess !== brand) throw new Error('Forbidden: Imported lead brand must match selected telecaller brand.');
+      const phoneKey = `${brand}:${canonicalPhone(r.phone)}`;
+      if (existingPhones.has(phoneKey) || batchPhones.has(phoneKey)) { failedCount++; continue; }
+      batchPhones.add(phoneKey);
       const leadId = `lead_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
       const newLead: Lead = {
@@ -751,6 +808,7 @@ export class DevFallbackRepository {
   ): Promise<{ assignedCount: number; leads: Lead[]; message: string }> {
     this.ensureLoaded();
     const orgId = this.getOrganizationId(adminUser);
+    assertManagement(adminUser);
     const adminName = adminUser?.name || 'Master Admin HQ';
     const adminId = adminUser?.id || 'usr_admin_001';
 
@@ -760,6 +818,8 @@ export class DevFallbackRepository {
       if (!targetTc) {
         throw new Error('Forbidden: Target telecaller does not belong to your organization.');
       }
+      assertCanManageTelecaller(adminUser, targetTc);
+      if (!targetTc.isActive) throw new Error('Cannot assign leads to an inactive telecaller.');
     }
 
     let count = 0;
@@ -769,6 +829,8 @@ export class DevFallbackRepository {
     for (const id of leadIds) {
       const lead = this.leads.find((l) => l.id === id && l.organizationId === orgId);
       if (!lead) continue;
+      assertLeadAccess(adminUser, lead);
+      if (targetTc && targetTc.brandAccess !== lead.brand) throw new Error('Forbidden: Lead and telecaller brands must match.');
 
       lead.assignedTo = targetTc ? targetTc.id : null;
       lead.assignedTelecallerName = targetTc ? targetTc.name : undefined;
@@ -805,6 +867,9 @@ export class DevFallbackRepository {
   ): Promise<{ vidyaAssigned: number; estateAssigned: number; totalAssigned: number; message: string }> {
     this.ensureLoaded();
     const orgId = this.getOrganizationId(adminUser);
+    assertManagement(adminUser!);
+    assertManagement(adminUser!);
+    const effectiveBrand = scopedBrand(adminUser!, brandFilter);
     const adminName = adminUser?.name || 'Master Admin HQ';
     const adminId = adminUser?.id || 'usr_admin_001';
 
@@ -822,7 +887,7 @@ export class DevFallbackRepository {
     const unassignedLeads = this.leads.filter((l) => l.organizationId === orgId && !l.assignedTo);
 
     for (const lead of unassignedLeads) {
-      if (brandFilter && brandFilter !== 'ALL' && lead.brand !== brandFilter) {
+      if (effectiveBrand !== 'ALL' && lead.brand !== effectiveBrand) {
         continue;
       }
 
@@ -884,6 +949,8 @@ export class DevFallbackRepository {
     const orgId = this.getOrganizationId(userContext);
     const lead = this.leads.find((l) => l.id === data.leadId && l.organizationId === orgId);
     if (!lead) throw new Error(`Lead not found with ID: ${data.leadId}`);
+    if (!userContext || userContext.role !== 'TELECALLER') throw new Error('Forbidden: Telecaller authorization required.');
+    assertLeadAccess(userContext, lead);
 
     const tcId = userContext?.id || lead.assignedTo || 'usr_tc_vidya_1';
     const tcUser = this.users.find((u) => u.id === tcId && u.organizationId === orgId);
@@ -980,6 +1047,8 @@ export class DevFallbackRepository {
     const orgId = this.getOrganizationId(userContext);
     const lead = this.leads.find((l) => l.id === data.leadId && l.organizationId === orgId);
     if (!lead) throw new Error(`Lead not found with ID: ${data.leadId}`);
+    if (!userContext || userContext.role !== 'TELECALLER') throw new Error('Forbidden: Telecaller authorization required.');
+    assertLeadAccess(userContext, lead);
 
     const tcId = userContext?.id || lead.assignedTo || 'usr_tc_vidya_1';
     const tcUser = this.users.find((u) => u.id === tcId && u.organizationId === orgId);
@@ -1030,11 +1099,14 @@ export class DevFallbackRepository {
   ): Promise<{ message: string; followUp: FollowUp; lead: Lead }> {
     this.ensureLoaded();
     const orgId = this.getOrganizationId(user);
+    if (user.role !== 'TELECALLER') throw new Error('Forbidden: Telecaller authorization required.');
     const fu = this.followUps.find((f) => f.id === followUpId && f.organizationId === orgId);
     if (!fu) throw new Error(`Follow-up not found with ID: ${followUpId}`);
 
     const lead = this.leads.find((l) => l.id === fu.leadId && l.organizationId === orgId);
     if (!lead) throw new Error(`Lead not found for follow-up ID: ${followUpId}`);
+    assertLeadAccess(user, lead);
+    if (fu.telecallerId !== user.id) throw new Error('Forbidden: Follow-up is not assigned to you.');
 
     const now = new Date().toISOString();
     fu.status = 'COMPLETED';
@@ -1073,6 +1145,7 @@ export class DevFallbackRepository {
     }
     this.recalculateFollowUpStatuses();
     const orgId = this.getOrganizationId(userContext);
+    const effectiveBrand = scopedBrand(userContext, brandFilter);
 
     let list = this.followUps.filter((f) => f.organizationId === orgId);
 
@@ -1085,8 +1158,8 @@ export class DevFallbackRepository {
       list = list.filter((f) => f.telecallerId === telecallerId);
     }
 
-    if (brandFilter && brandFilter !== 'ALL') {
-      list = list.filter((f) => f.brand === brandFilter);
+    if (effectiveBrand !== 'ALL') {
+      list = list.filter((f) => f.brand === effectiveBrand);
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
@@ -1109,6 +1182,7 @@ export class DevFallbackRepository {
     const orgId = this.getOrganizationId(userContext);
     const lead = this.leads.find((l) => l.id === leadId && l.organizationId === orgId);
     if (!lead) throw new Error(`Lead not found with ID: ${leadId}`);
+    assertLeadAccess(userContext, lead);
     const history = this.leadHistories.filter((h) => h.leadId === leadId && (!h.organizationId || h.organizationId === orgId));
     return { lead, history };
   }
@@ -1131,20 +1205,22 @@ export class DevFallbackRepository {
     if (!userContext) {
       throw new Error('Unauthorized: User context required to fetch admin metrics.');
     }
+    assertManagement(userContext);
     this.recalculateFollowUpStatuses();
     const orgId = this.getOrganizationId(userContext);
+    const effectiveBrand = scopedBrand(userContext, brandFilter);
 
     let filteredLeads = this.leads.filter((l) => l.organizationId === orgId);
     let filteredCalls = this.callActivities.filter((c) => c.organizationId === orgId);
     let filteredFollowUps = this.followUps.filter((f) => f.organizationId === orgId);
 
-    if (brandFilter && brandFilter !== 'ALL') {
-      filteredLeads = filteredLeads.filter((l) => l.brand === brandFilter);
+    if (effectiveBrand !== 'ALL') {
+      filteredLeads = filteredLeads.filter((l) => l.brand === effectiveBrand);
       filteredCalls = filteredCalls.filter((c) => {
         const lead = this.leads.find((l) => l.id === c.leadId && l.organizationId === orgId);
-        return lead?.brand === brandFilter;
+        return lead?.brand === effectiveBrand;
       });
-      filteredFollowUps = filteredFollowUps.filter((f) => f.brand === brandFilter);
+      filteredFollowUps = filteredFollowUps.filter((f) => f.brand === effectiveBrand);
     }
 
     const todayStr = new Date().toISOString().split('T')[0];

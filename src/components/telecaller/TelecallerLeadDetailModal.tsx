@@ -32,6 +32,7 @@ interface TelecallerLeadDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   onLeadUpdated: () => void;
+  onNextLead?: () => void;
   onInitiateCall: (lead: Lead) => void;
   onInitiateWhatsApp: (lead: Lead) => void;
 }
@@ -77,6 +78,7 @@ export const TelecallerLeadDetailModal: React.FC<TelecallerLeadDetailModalProps>
   isOpen,
   onClose,
   onLeadUpdated,
+  onNextLead,
   onInitiateCall,
   onInitiateWhatsApp,
 }) => {
@@ -196,6 +198,12 @@ export const TelecallerLeadDetailModal: React.FC<TelecallerLeadDetailModalProps>
       maxWidth="3xl"
     >
       <div className="space-y-6">
+        {statusSuccess && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between gap-3">
+            <span className="font-semibold text-emerald-800">Call result saved.</span>
+            {onNextLead && <Button variant="primary" size="sm" onClick={onNextLead}>Next Lead</Button>}
+          </div>
+        )}
         {/* Quick Action Dial Buttons */}
         <div className="bg-slate-900 text-white p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AuthUser, Lead, BusinessBrand } from './types';
+import { AuthUser, Lead } from './types';
 import { api } from './lib/api';
 import { soundManager } from './lib/sound';
 import { LoginScreen } from './components/auth/LoginScreen';
@@ -7,16 +7,16 @@ import { Sidebar } from './components/common/Sidebar';
 import { TopHeader } from './components/common/TopHeader';
 import { BottomNav } from './components/common/BottomNav';
 import { CallSimulatorModal } from './components/common/CallSimulatorModal';
-import { TelecallerHome } from './components/telecaller/TelecallerHome';
+import { SimpleTelecallerHome } from './components/telecaller/SimpleTelecallerHome';
 import { TelecallerLeadList } from './components/telecaller/TelecallerLeadList';
 import { TelecallerLeadDetailModal } from './components/telecaller/TelecallerLeadDetailModal';
 import { TelecallerFollowUps } from './components/telecaller/TelecallerFollowUps';
 import { TelecallerProfile } from './components/telecaller/TelecallerProfile';
-import { AdminDashboard } from './components/admin/AdminDashboard';
-import { AdminTelecallers } from './components/admin/AdminTelecallers';
 import { AdminTelecallerDetailModal } from './components/admin/AdminTelecallerDetailModal';
-import { AdminLeadUpload } from './components/admin/AdminLeadUpload';
-import { AdminAllLeads } from './components/admin/AdminAllLeads';
+import { OwnerPortal } from './components/owner/OwnerPortal';
+import { HrDashboard } from './components/hr/HrDashboard';
+import { HrLeadUpload } from './components/hr/HrLeadUpload';
+import { HrTelecallers } from './components/hr/HrTelecallers';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
@@ -26,8 +26,8 @@ export default function App() {
 
   // Active navigation tab per role
   const [telecallerTab, setTelecallerTab] = useState<'home' | 'leads' | 'followups' | 'profile'>('home');
-  const [adminTab, setAdminTab] = useState<'dashboard' | 'allLeads' | 'telecallers' | 'upload'>('dashboard');
-  const [adminBrand, setAdminBrand] = useState<'ALL' | BusinessBrand>('ALL');
+  const [ownerTab, setOwnerTab] = useState<'dashboard' | 'companies' | 'hrs' | 'reports'>('dashboard');
+  const [hrTab, setHrTab] = useState<'dashboard' | 'telecallers' | 'upload' | 'followups'>('dashboard');
 
   // Modals
   const [selectedLeadForDetail, setSelectedLeadForDetail] = useState<Lead | null>(null);
@@ -42,6 +42,8 @@ export default function App() {
   const fetchData = useCallback(async () => {
     try {
       const user = api.getCurrentUser();
+      setLeads([]);
+      setAllTelecallers([]);
       setCurrentUser(user);
 
       if (!user) {
@@ -49,7 +51,7 @@ export default function App() {
         return;
       }
 
-      if (user.role === 'ADMIN') {
+      if (user.role !== 'TELECALLER') {
         const [leadsData, tcsData] = await Promise.all([
           api.getAdminLeads(),
           api.getAdminTelecallers(),
@@ -57,12 +59,9 @@ export default function App() {
         setLeads(leadsData);
         setAllTelecallers(tcsData);
       } else {
-        const [myLeads, tcsData] = await Promise.all([
-          api.getTelecallerLeads(),
-          api.getAdminTelecallers().catch(() => []),
-        ]);
+        const myLeads = await api.getTelecallerLeads();
         setLeads(myLeads);
-        setAllTelecallers(tcsData);
+        setAllTelecallers([]);
       }
     } catch (err) {
       console.error('Failed to load CRM data:', err);
@@ -83,9 +82,17 @@ export default function App() {
 
   // Login handler
   const handleLoginSuccess = (user: AuthUser) => {
+    setLeads([]);
+    setAllTelecallers([]);
+    setSelectedLeadForDetail(null);
+    setSelectedTcForDetail(null);
+    setCallModalLead(null);
+    setIsCallModalOpen(false);
     setCurrentUser(user);
-    if (user.role === 'ADMIN') {
-      setAdminTab('dashboard');
+    if (user.role === 'OWNER') {
+      setOwnerTab('dashboard');
+    } else if (user.role === 'HR') {
+      setHrTab('dashboard');
     } else {
       setTelecallerTab('home');
     }
@@ -100,9 +107,17 @@ export default function App() {
     try {
       const pass = targetLoginId === 'admin' ? 'admin123' : 'password123';
       const res = await api.login(targetLoginId, pass);
+      setLeads([]);
+      setAllTelecallers([]);
+      setSelectedLeadForDetail(null);
+      setSelectedTcForDetail(null);
+      setCallModalLead(null);
+      setIsCallModalOpen(false);
       setCurrentUser(res.user);
-      if (res.user.role === 'ADMIN') {
-        setAdminTab('dashboard');
+      if (res.user.role === 'OWNER') {
+        setOwnerTab('dashboard');
+      } else if (res.user.role === 'HR') {
+        setHrTab('dashboard');
       } else {
         setTelecallerTab('home');
       }
@@ -116,8 +131,11 @@ export default function App() {
   const handleLogout = () => {
     api.logout();
     setCurrentUser(null);
+    setLeads([]);
+    setAllTelecallers([]);
     setSelectedLeadForDetail(null);
     setSelectedTcForDetail(null);
+    setCallModalLead(null);
     setIsCallModalOpen(false);
   };
 
@@ -186,11 +204,17 @@ export default function App() {
   }).length;
 
   const unassignedCount = leads.filter((l) => !l.assignedTo).length;
+  const selectedLeadIndex = leads.findIndex((lead) => lead.id === selectedLeadForDetail?.id);
+  const nextPendingLead = currentUser.role === 'TELECALLER'
+    ? leads.slice(selectedLeadIndex + 1).find((lead) => lead.status === 'NEW') || leads.find((lead) => lead.status === 'NEW' && lead.id !== selectedLeadForDetail?.id)
+    : undefined;
 
-  const currentTab = currentUser.role === 'ADMIN' ? adminTab : telecallerTab;
+  const currentTab = currentUser.role === 'OWNER' ? ownerTab : currentUser.role === 'HR' ? hrTab : telecallerTab;
   const handleSelectTab = (tab: string) => {
-    if (currentUser.role === 'ADMIN') {
-      setAdminTab(tab as any);
+    if (currentUser.role === 'OWNER') {
+      setOwnerTab(tab as any);
+    } else if (currentUser.role === 'HR') {
+      setHrTab(tab as any);
     } else {
       setTelecallerTab(tab as any);
     }
@@ -227,15 +251,7 @@ export default function App() {
           {currentUser.role === 'TELECALLER' ? (
             <>
               {telecallerTab === 'home' && (
-                <TelecallerHome
-                  leads={leads}
-                  currentUser={currentUser}
-                  currentTelecaller={currentUser}
-                  onSelectLead={(lead) => setSelectedLeadForDetail(lead)}
-                  onInitiateCall={handleInitiateCall}
-                  onInitiateWhatsApp={handleInitiateWhatsApp}
-                  onNavigateToTab={(tab) => setTelecallerTab(tab as any)}
-                />
+                <SimpleTelecallerHome user={currentUser} leads={leads} onStart={(lead)=>setSelectedLeadForDetail(lead)} onLead={setSelectedLeadForDetail} onNavigate={(tab)=>setTelecallerTab(tab as any)} />
               )}
 
               {telecallerTab === 'leads' && (
@@ -273,59 +289,21 @@ export default function App() {
                 />
               )}
             </>
+          ) : currentUser.role === 'OWNER' ? (
+            <OwnerPortal tab={ownerTab} leads={leads} telecallers={allTelecallers} refresh={fetchData} />
           ) : (
-            /* Admin HQ Views */
             <>
-              {adminTab === 'dashboard' && (
-                <AdminDashboard
-                  leads={leads}
-                  telecallers={allTelecallers}
-                  metrics={null}
-                  selectedBrand={adminBrand}
-                  onSelectBrand={setAdminBrand}
-                  onSelectTelecaller={(tc) => setSelectedTcForDetail(tc)}
-                  onNavigateToUpload={() => setAdminTab('upload')}
-                  onNavigateToTelecallers={() => setAdminTab('telecallers')}
-                  onNavigateToAllLeads={() => setAdminTab('allLeads')}
-                  onSelectLeadForDetail={(lead) => setSelectedLeadForDetail(lead)}
-                  onLeadsUpdated={fetchData}
-                />
-              )}
-
-              {adminTab === 'allLeads' && (
-                <AdminAllLeads
-                  leads={leads}
-                  telecallers={allTelecallers}
-                  onLeadsUpdated={fetchData}
-                  onSelectLeadForDetail={(lead) => setSelectedLeadForDetail(lead)}
-                  onInitiateCall={handleInitiateCall}
-                  onInitiateWhatsApp={handleInitiateWhatsApp}
-                />
-              )}
-
-              {adminTab === 'telecallers' && (
-                <AdminTelecallers
-                  telecallers={allTelecallers}
-                  leads={leads}
-                  onTelecallersUpdated={fetchData}
-                  onSelectTelecaller={(tc) => setSelectedTcForDetail(tc)}
-                />
-              )}
-
-              {adminTab === 'upload' && (
-                <AdminLeadUpload
-                  telecallers={allTelecallers}
-                  onLeadsImported={fetchData}
-                  onNavigateToDashboard={() => setAdminTab('dashboard')}
-                />
-              )}
+              {hrTab === 'dashboard' && <HrDashboard user={currentUser} leads={leads} telecallers={allTelecallers} onNavigate={(tab)=>setHrTab(tab as any)} />}
+              {hrTab === 'telecallers' && <HrTelecallers user={currentUser} leads={leads} telecallers={allTelecallers} refresh={fetchData} />}
+              {hrTab === 'upload' && <HrLeadUpload user={currentUser} telecallers={allTelecallers} onComplete={fetchData} onViewTelecaller={()=>setHrTab('telecallers')} />}
+              {hrTab === 'followups' && <div className="max-w-6xl mx-auto p-5 sm:p-8"><h1 className="text-3xl font-bold">Team follow-ups</h1><p className="text-slate-500 mt-2">Today and overdue follow-ups across your company.</p><div className="mt-6 bg-white border rounded-2xl divide-y">{leads.filter(l=>l.activeFollowUp).map(l=><div key={l.id} className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-left p-4"><b>{l.name}</b><span>{l.assignedTelecallerName||'Unassigned'}</span><span>{l.activeFollowUp?.dueDate}</span><span>{l.activeFollowUp?.dueTime}</span></div>)}{!leads.some(l=>l.activeFollowUp)&&<p className="p-8 text-center text-slate-500">No team follow-ups are pending.</p>}</div></div>}
             </>
           )}
         </main>
 
         {/* Mobile / Tablet Bottom Navigation */}
         <BottomNav
-          role={currentUser.role === 'ADMIN' ? 'admin' : 'telecaller'}
+          role={currentUser.role === 'OWNER' ? 'owner' : currentUser.role === 'HR' ? 'hr' : 'telecaller'}
           currentTab={currentTab}
           onSelectTab={handleSelectTab}
           followUpBadgeCount={overdueOrTodayCount}
@@ -341,6 +319,7 @@ export default function App() {
         isOpen={Boolean(selectedLeadForDetail)}
         onClose={() => setSelectedLeadForDetail(null)}
         onLeadUpdated={fetchData}
+        onNextLead={nextPendingLead ? () => setSelectedLeadForDetail(nextPendingLead) : undefined}
         onInitiateCall={(l) => {
           setSelectedLeadForDetail(null);
           handleInitiateCall(l);

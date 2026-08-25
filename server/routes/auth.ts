@@ -8,6 +8,10 @@ export const authRouter = Router();
 
 // POST /api/auth/register (Company / Admin Self-Registration)
 authRouter.post('/register', validateRequest(registerAdminSchema), async (req, res: Response): Promise<void> => {
+  if (process.env.NODE_ENV === 'production' || process.env.ALLOW_OWNER_BOOTSTRAP !== 'true') {
+    res.status(404).json({ error: 'Endpoint not found.' });
+    return;
+  }
   const { companyName, loginId, password, phone, email } = req.body;
 
   try {
@@ -56,6 +60,10 @@ authRouter.post('/login', validateRequest(loginSchema), async (req, res: Respons
       res.status(401).json({ error: 'Invalid login ID or password. Please check your credentials and try again.' });
       return;
     }
+    if (process.env.NODE_ENV !== 'production' && (userWithHash.role as string) === 'ADMIN') {
+      userWithHash.role = 'OWNER';
+      userWithHash.brandAccess = 'BOTH';
+    }
 
     if (!userWithHash.isActive) {
       res.status(403).json({ error: 'Account is deactivated. Please contact your CRM Administrator.' });
@@ -101,7 +109,7 @@ authRouter.get('/demo-accounts', async (_req, res: Response): Promise<void> => {
   try {
     const telecallers = await db.getTelecallers();
     res.json({
-      admin: { loginId: 'admin', password: 'admin123', name: 'Master Admin HQ', role: 'ADMIN', brandAccess: 'BOTH' },
+      admin: { loginId: 'admin', password: 'admin123', name: 'Master Owner HQ', role: 'OWNER', brandAccess: 'BOTH' },
       telecallers: telecallers.map((tc) => ({
         loginId: tc.loginId,
         password: 'password123',

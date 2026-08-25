@@ -10,6 +10,10 @@ export interface ParseResult {
 
 export function parseExcelOrCsv(file: File, targetBrand?: BusinessBrand): Promise<ParseResult> {
   return new Promise((resolve, reject) => {
+    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) {
+      reject(new Error('Please choose an Excel (.xlsx, .xls) or CSV file.'));
+      return;
+    }
     const reader = new FileReader();
 
     reader.onload = (e) => {

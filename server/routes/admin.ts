@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { db } from '../db';
-import { requireAdmin, AuthenticatedRequest } from '../auth';
+import { requireManagement, AuthenticatedRequest } from '../auth';
 import { LeadStatus, BusinessBrand, BrandAccess } from '../../src/types';
 import {
   validateRequest,
@@ -15,7 +15,7 @@ import {
 export const adminRouter = Router();
 
 // Protect all admin routes with requireAdmin middleware
-adminRouter.use(requireAdmin);
+adminRouter.use(requireManagement);
 
 // GET /api/admin/telecallers
 adminRouter.get('/telecallers', async (req: AuthenticatedRequest, res: Response): Promise<void> => {

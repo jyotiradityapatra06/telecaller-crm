@@ -87,6 +87,12 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
       res.status(401).json({ error: 'Unauthorized: User account not found' });
       return;
     }
+    // Development/backward compatibility while migration 004 is being applied.
+    // Authorization always sees the legacy master role as OWNER; no ADMIN branch remains.
+    if (process.env.NODE_ENV !== 'production' && (user.role as string) === 'ADMIN') {
+      (user as User).role = 'OWNER';
+      user.brandAccess = 'BOTH';
+    }
 
     // Strict cross-organization boundary validation
     if (user.organizationId !== payload.organizationId) {
@@ -110,10 +116,20 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
   }
 }
 
-export function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+export function requireOwner(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
   requireAuth(req, res, () => {
-    if (req.user?.role !== 'ADMIN') {
-      res.status(403).json({ error: 'Forbidden: Admin authorization required to access this resource' });
+    if (req.user?.role !== 'OWNER') {
+      res.status(403).json({ error: 'Forbidden: Owner authorization required to access this resource' });
+      return;
+    }
+    next();
+  });
+}
+
+export function requireManagement(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+  requireAuth(req, res, () => {
+    if (req.user?.role !== 'OWNER' && req.user?.role !== 'HR') {
+      res.status(403).json({ error: 'Forbidden: Management authorization required' });
       return;
     }
     next();
@@ -122,7 +138,7 @@ export function requireAdmin(req: AuthenticatedRequest, res: Response, next: Nex
 
 export function requireTelecaller(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
   requireAuth(req, res, () => {
-    if (req.user?.role !== 'TELECALLER' && req.user?.role !== 'ADMIN') {
+    if (req.user?.role !== 'TELECALLER') {
       res.status(403).json({ error: 'Forbidden: Telecaller authorization required' });
       return;
     }

@@ -27,7 +27,7 @@ interface DemoAccountItem {
   name: string;
   loginId: string;
   password: string;
-  role: 'ADMIN' | 'TELECALLER';
+  role: 'OWNER' | 'HR' | 'TELECALLER';
   brandAccess: string;
   badge: string;
   icon: 'admin' | 'vidya' | 'estate' | 'dual';
@@ -38,7 +38,7 @@ const DEFAULT_DEMO_ACCOUNTS: DemoAccountItem[] = [
     name: 'Master Admin HQ',
     loginId: 'admin',
     password: 'admin123',
-    role: 'ADMIN',
+    role: 'OWNER',
     brandAccess: 'BOTH',
     badge: 'Dual Brand HQ',
     icon: 'admin',
@@ -61,23 +61,14 @@ const DEFAULT_DEMO_ACCOUNTS: DemoAccountItem[] = [
     badge: 'Apni Estate (Realty)',
     icon: 'estate',
   },
-  {
-    name: 'Vikram Malhotra',
-    loginId: 'TC_DUAL_1',
-    password: 'password123',
-    role: 'TELECALLER',
-    brandAccess: 'BOTH',
-    badge: 'Dual Brand Caller',
-    icon: 'dual',
-  },
 ];
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
-  const [authMode, setAuthMode] = useState<'SIGN_IN' | 'REGISTER_ADMIN'>('SIGN_IN');
+  const [authMode, setAuthMode] = useState<'SIGN_IN' | 'REGISTER_OWNER'>('SIGN_IN');
   const isDevMode = import.meta.env.DEV;
 
   // Sign In States
-  const [roleTab, setRoleTab] = useState<'ADMIN' | 'TELECALLER'>('TELECALLER');
+  const [roleTab, setRoleTab] = useState<'MANAGEMENT' | 'TELECALLER'>('TELECALLER');
   const [loginId, setLoginId] = useState<string>(isDevMode ? 'TC_VIDYA_1' : '');
   const [password, setPassword] = useState<string>(isDevMode ? 'password123' : '');
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -112,7 +103,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             name: data.admin.name || 'Master Admin HQ',
             loginId: data.admin.loginId || 'admin',
             password: data.admin.password || 'admin123',
-            role: 'ADMIN',
+            role: 'OWNER',
             brandAccess: 'BOTH',
             badge: 'Dual Brand HQ',
             icon: 'admin',
@@ -250,7 +241,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setError(null);
   };
 
-  const switchMode = (mode: 'SIGN_IN' | 'REGISTER_ADMIN') => {
+  const switchMode = (mode: 'SIGN_IN' | 'REGISTER_OWNER') => {
     soundManager.playTap();
     setAuthMode(mode);
     setError(null);
@@ -392,7 +383,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     id="tab-role-admin"
                     onClick={() => {
                       soundManager.playTap();
-                      setRoleTab('ADMIN');
+                      setRoleTab('MANAGEMENT');
                       if (isDevMode) {
                         setLoginId('admin');
                         setPassword('admin123');
@@ -400,13 +391,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                       setError(null);
                     }}
                     className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer min-h-[42px] ${
-                      roleTab === 'ADMIN'
+                      roleTab === 'MANAGEMENT'
                         ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
                     <Shield className="w-3.5 h-3.5 shrink-0" />
-                    <span>Admin HQ</span>
+                    <span>Owner / HR</span>
                   </button>
                 </div>
 
@@ -425,18 +416,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div>
                     <label className="text-xs font-semibold text-slate-300 block mb-1.5">
-                      {roleTab === 'ADMIN' ? 'Admin Login ID' : 'Telecaller ID'}
+                      {roleTab === 'MANAGEMENT' ? 'Owner / HR Login ID' : 'Telecaller ID'}
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                        {roleTab === 'ADMIN' ? <Shield className="w-4 h-4" /> : <User className="w-4 h-4" />}
+                        {roleTab === 'MANAGEMENT' ? <Shield className="w-4 h-4" /> : <User className="w-4 h-4" />}
                       </div>
                       <input
                         type="text"
                         id="input-login-id"
                         value={loginId}
                         onChange={(e) => setLoginId(e.target.value)}
-                        placeholder={roleTab === 'ADMIN' ? 'Enter admin login ID' : 'Enter telecaller ID'}
+                        placeholder={roleTab === 'MANAGEMENT' ? 'Enter owner or HR login ID' : 'Enter telecaller ID'}
                         required
                         className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all min-h-[44px]"
                       />
@@ -478,7 +469,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     className={`w-full mt-2 py-3 px-4 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg min-h-[46px] ${
                       isLoading
                         ? 'bg-slate-700 cursor-not-allowed opacity-70'
-                        : roleTab === 'ADMIN'
+                        : roleTab === 'MANAGEMENT'
                         ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'
                         : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/30'
                     }`}
@@ -487,7 +478,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                       <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <>
-                        <span>Sign In to {roleTab === 'ADMIN' ? 'Admin Portal' : 'Calling Portal'}</span>
+                        <span>Sign In to {roleTab === 'MANAGEMENT' ? 'Management Portal' : 'Calling Portal'}</span>
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}
@@ -495,18 +486,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 </form>
 
                 {/* Company Account Creation Link */}
-                <div className="mt-5 pt-4 border-t border-slate-800 text-center">
+                {isDevMode && <div className="mt-5 pt-4 border-t border-slate-800 text-center">
                   <span className="text-xs text-slate-400 block mb-1">Don't have a company account?</span>
                   <button
                     type="button"
                     id="btn-switch-to-register-admin"
-                    onClick={() => switchMode('REGISTER_ADMIN')}
+                    onClick={() => switchMode('REGISTER_OWNER')}
                     className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer inline-flex items-center gap-1.5"
                   >
                     <Shield className="w-3.5 h-3.5" />
-                    <span>Create Company Admin Account</span>
+                    <span>Create Development Owner Account</span>
                   </button>
-                </div>
+                </div>}
 
                 {/* Quick Demo Credentials - Gated to Development Mode Only */}
                 {isDevMode && demoAccounts.length > 0 && (
@@ -563,7 +554,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
               </>
             ) : (
               /* ========================================================================= */
-              /* AUTH MODE: CREATE COMPANY ADMIN ACCOUNT */
+              /* AUTH MODE: CONTROLLED OWNER BOOTSTRAP */
               /* ========================================================================= */
               <>
                 <div className="mb-6">
@@ -628,7 +619,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                         id="input-admin-reg-loginid"
                         value={regLoginId}
                         onChange={(e) => setRegLoginId(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))}
-                        placeholder="e.g. APEX_ADMIN"
+                        placeholder="e.g. APEX_OWNER"
                         className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[44px]"
                         required
                       />

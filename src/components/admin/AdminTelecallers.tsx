@@ -620,26 +620,6 @@ export const AdminTelecallers: React.FC<AdminTelecallersProps> = ({
                 <p className="text-[10px] text-slate-500 mt-1 line-clamp-1">Realty & Property</p>
               </button>
 
-              <button
-                type="button"
-                id="btn-admin-brand-dual"
-                onClick={() => {
-                  soundManager.playTap();
-                  setNewBrandAccess('BOTH');
-                  setNewLoginId(getSuggestedLoginId('BOTH'));
-                }}
-                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                  newBrandAccess === 'BOTH'
-                    ? 'bg-purple-50 border-purple-500 text-purple-950 ring-1 ring-purple-500'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <Layers className="w-4 h-4 text-purple-600" />
-                  <span className="text-xs font-bold">Dual Division</span>
-                </div>
-                <p className="text-[10px] text-slate-500 mt-1 line-clamp-1">All Brand Leads</p>
-              </button>
             </div>
           </div>
 
@@ -900,7 +880,6 @@ export const AdminTelecallers: React.FC<AdminTelecallersProps> = ({
                 >
                   <option value="APNI_VIDYA">Apni Vidya (EdTech)</option>
                   <option value="APNI_ESTATE">Apni Estate (Realty)</option>
-                  <option value="BOTH">Dual Division (Both)</option>
                 </select>
               </div>
 

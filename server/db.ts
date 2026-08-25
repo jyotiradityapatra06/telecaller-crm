@@ -42,6 +42,11 @@ class DatabaseAdapter {
     return dbRepository.registerAdmin(data);
   }
 
+  public getHrs(user: any) { return dbRepository.getHrs(user); }
+  public createHr(data: any, user: any) { return dbRepository.createHr(data, user); }
+  public updateHr(id: string, data: any, user: any) { return dbRepository.updateHr(id, data, user); }
+  public resetHrPassword(id: string, password: string | undefined, user: any) { return dbRepository.resetHrPassword(id, password, user); }
+
   public createTelecaller(data: any, adminUser?: any) {
     return dbRepository.createTelecaller(data, adminUser);
   }
@@ -70,8 +75,8 @@ class DatabaseAdapter {
     return dbRepository.getLeadById(id, userContext);
   }
 
-  public importLeads(rows: any[], assignedToTelecallerId?: string | null, adminUser?: any, defaultBrand?: any) {
-    return dbRepository.importLeads(rows, assignedToTelecallerId, adminUser, defaultBrand);
+  public importLeads(rows: any[], assignedTelecallerId?: string | null, adminUser?: any, defaultBrand?: any) {
+    return dbRepository.importLeads(rows, assignedTelecallerId, adminUser, defaultBrand);
   }
 
   public assignLeads(leadIds: string[], telecallerId: string | null, adminUser: any) {

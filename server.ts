@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import { authRouter } from './server/routes/auth';
 import { adminRouter } from './server/routes/admin';
 import { telecallerRouter } from './server/routes/telecaller';
+import { ownerRouter } from './server/routes/owner';
 import { getSupabaseClient, isSupabaseConfigured } from './server/supabase';
 
 // Production Environment Strict Configuration Guard
@@ -175,6 +176,7 @@ async function startServer() {
 
   app.use('/api/auth', authRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api/owner', ownerRouter);
   app.use('/api/telecaller', telecallerRouter);
 
   // Vite middleware setup (development) or Static serving (production)

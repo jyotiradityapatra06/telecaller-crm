@@ -285,8 +285,25 @@ class ApiClient {
     this.clearAuth();
   }
 
+  public async getHrs(): Promise<AuthUser[]> {
+    const result = await this.request<{ hrs: AuthUser[] }>('/api/owner/hr');
+    return result.hrs || [];
+  }
+
+  public createHr(payload: { name: string; loginId: string; password: string; brandAccess: BusinessBrand; phone?: string; email?: string }): Promise<{ hr: AuthUser }> {
+    return this.request('/api/owner/hr', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  public updateHr(id: string, payload: Partial<Pick<AuthUser, 'name' | 'phone' | 'email' | 'brandAccess' | 'isActive'>>): Promise<{ hr: AuthUser }> {
+    return this.request(`/api/owner/hr/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  }
+
+  public resetHrPassword(id: string, password?: string): Promise<{ user: AuthUser; temporaryPassword: string }> {
+    return this.request(`/api/owner/hr/${encodeURIComponent(id)}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) });
+  }
+
   // ============================================================
-  // ADMIN APIs
+  // MANAGEMENT APIs (OWNER / HR, server-scoped)
   // ============================================================
 
   public async getAdminTelecallers(
