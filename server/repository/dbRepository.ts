@@ -1289,7 +1289,7 @@ export class DbRepository {
 
     const { error } = await this.client
       .from('follow_ups')
-      .update({ status: 'OVERDUE', updated_at: new Date().toISOString() })
+      .update({ status: 'OVERDUE' })
       .eq('organization_id', orgId)
       .eq('status', 'PENDING')
       .lt('due_date', todayStr);
