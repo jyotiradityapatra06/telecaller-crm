@@ -13,6 +13,8 @@ import {
   AdminMetrics,
   TelecallerMetrics,
   ParsedLeadRow,
+  ImportLeadsResult,
+  DuplicateLeadConflict,
 } from '../../src/types';
 import {
   mapUserFromRow,
@@ -784,7 +786,7 @@ export class DbRepository {
     assignedTelecallerId?: string | null,
     adminUser?: User,
     defaultBrand?: BusinessBrand
-  ): Promise<{ importedCount: number; failedCount: number; assignedCount: number; assignedTelecallerId: string | null; leads: Lead[] }> {
+  ): Promise<ImportLeadsResult> {
     if (this.useFallback) return this.fallbackRepo.importLeads(rows, assignedTelecallerId, adminUser, defaultBrand);
     if (!adminUser) {
       throw new Error('Unauthorized: Admin user context required for lead import.');
@@ -798,16 +800,26 @@ export class DbRepository {
     const now = new Date();
     const importedLeads: Lead[] = [];
     let importedCount = 0;
+    let duplicateCount = 0;
+    let invalidCount = 0;
     let failedCount = 0;
 
     const users = await this.getAllUsers(adminUser);
+    const userMap = new Map(users.map((u) => [u.id, u]));
     const tc = assignedTelecallerId ? users.find((u) => u.id === assignedTelecallerId) : null;
     if (assignedTelecallerId && !tc) throw new Error('Assigned telecaller does not exist in your organization.');
     if (tc) assertCanManageTelecaller(adminUser, tc);
     if (tc && !tc.isActive) throw new Error('Cannot assign leads to an inactive telecaller.');
     const admin = adminUser;
-    const existingPhones = new Set((await this.getAllLeads({ brand: effectiveDefaultBrand }, adminUser)).map((lead) => `${lead.brand}:${canonicalPhone(lead.phone)}`));
+
+    const existingLeadsList = await this.getAllLeads({ brand: effectiveDefaultBrand }, adminUser);
+    const existingPhoneMap = new Map<string, Lead>();
+    existingLeadsList.forEach((lead) => {
+      existingPhoneMap.set(`${lead.brand}:${canonicalPhone(lead.phone)}`, lead);
+    });
+
     const batchPhones = new Set<string>();
+    const duplicateLeads: DuplicateLeadConflict[] = [];
 
     const leadRowsToInsert: any[] = [];
     const historyRowsToInsert: any[] = [];
@@ -815,6 +827,7 @@ export class DbRepository {
 
     rows.forEach((row, i) => {
       if (!row.name || !row.phone) {
+        invalidCount++;
         failedCount++;
         return;
       }
@@ -823,10 +836,41 @@ export class DbRepository {
       const brand: BusinessBrand = (requestedBrand === 'ALL' ? (row.courseInterest ? 'APNI_VIDYA' : 'APNI_ESTATE') : requestedBrand) as BusinessBrand;
       if (tc && tc.brandAccess !== brand) throw new Error('Forbidden: Imported lead brand must match selected telecaller brand.');
       const phoneKey = `${brand}:${canonicalPhone(row.phone)}`;
-      if (existingPhones.has(phoneKey) || batchPhones.has(phoneKey)) {
+
+      if (existingPhoneMap.has(phoneKey)) {
+        duplicateCount++;
         failedCount++;
+        const existing = existingPhoneMap.get(phoneKey)!;
+        const currentTc = existing.assignedTo ? userMap.get(existing.assignedTo) : undefined;
+        duplicateLeads.push({
+          leadId: existing.id,
+          name: existing.name,
+          phone: existing.phone,
+          brand: existing.brand,
+          status: existing.status,
+          currentlyAssignedTo: existing.assignedTo,
+          currentlyAssignedName: currentTc ? `${currentTc.name} (${currentTc.loginId})` : existing.assignedTelecallerName || 'Unassigned',
+          reason: 'ALREADY_EXISTS_IN_ORG',
+        });
         return;
       }
+
+      if (batchPhones.has(phoneKey)) {
+        duplicateCount++;
+        failedCount++;
+        duplicateLeads.push({
+          leadId: `batch_dup_${i}`,
+          name: row.name.trim(),
+          phone: row.phone.trim(),
+          brand,
+          status: 'NEW',
+          currentlyAssignedTo: null,
+          currentlyAssignedName: 'Duplicate in batch file',
+          reason: 'DUPLICATE_IN_BATCH',
+        });
+        return;
+      }
+
       batchPhones.add(phoneKey);
       const leadId = `lead_${brand.toLowerCase()}_imp_${Date.now()}_${i}`;
 
@@ -938,12 +982,22 @@ export class DbRepository {
       }
     }
 
+    const message = importedCount > 0
+      ? `Successfully imported and assigned ${importedCount} leads${tc ? ` to ${tc.name}` : ''}.`
+      : `No leads were assigned to ${tc?.name || 'the telecaller'}. All ${rows.length} rows were duplicates or invalid.`;
+
     return {
+      message,
+      totalRows: rows.length,
       importedCount,
-      failedCount,
       assignedCount: tc ? importedCount : 0,
+      duplicateCount,
+      invalidCount,
+      failedCount,
       assignedTelecallerId: tc?.id || null,
+      assignedTelecallerName: tc?.name,
       leads: importedLeads,
+      duplicateLeads,
     };
   }
 
@@ -969,7 +1023,8 @@ export class DbRepository {
       if (leads.some((lead) => lead!.brand !== target.brandAccess)) throw new Error('Forbidden: Lead and telecaller brands must match.');
     }
 
-    // Call Atomic RPC - Fail closed
+    // Call Atomic RPC - With resilient table fallback for schema/pgcrypto compatibility
+    let assignedCount = 0;
     const { data, error } = await this.client.rpc('assign_leads_atomic', {
       p_org_id: orgId,
       p_lead_ids: leadIds,
@@ -977,11 +1032,49 @@ export class DbRepository {
       p_admin_id: adminUser.id,
     });
 
-    if (error) {
-      throw new Error(`Lead assignment failed: ${error.message}`);
+    if (!error && data?.assignedCount !== undefined) {
+      assignedCount = Number(data.assignedCount) || 0;
+    } else {
+      // Direct table execution fallback
+      const now = new Date().toISOString();
+      const { error: updateErr } = await this.client
+        .from('leads')
+        .update({ assigned_to: telecallerId, updated_at: now })
+        .eq('organization_id', orgId)
+        .in('id', leadIds);
+
+      if (updateErr) {
+        throw new Error(`Lead assignment failed: ${updateErr.message}`);
+      }
+
+      const targetTc = telecallerId ? await this.findUserById(telecallerId, adminUser) : null;
+      const assignmentRows = leadIds.map((leadId, idx) => ({
+        id: `asgn_${leadId}_${Date.now()}_${idx}`,
+        organization_id: orgId,
+        lead_id: leadId,
+        assigned_to: telecallerId,
+        assigned_by: adminUser.id,
+        assignment_type: telecallerId ? 'ASSIGNED' : 'UNASSIGNED',
+        created_at: now,
+      }));
+
+      const historyRows = leadIds.map((leadId, idx) => ({
+        id: `hist_${leadId}_${Date.now()}_${idx}`,
+        organization_id: orgId,
+        lead_id: leadId,
+        user_id: adminUser.id,
+        action: telecallerId ? 'ASSIGNED' : 'REASSIGNED',
+        description: telecallerId
+          ? `Lead assigned to ${targetTc?.name || 'telecaller'} (${targetTc?.loginId || telecallerId}) by ${adminUser.name}.`
+          : `Lead moved to unassigned pool by ${adminUser.name}.`,
+        timestamp: now,
+      }));
+
+      await this.client.from('lead_assignments').insert(assignmentRows);
+      await this.client.from('lead_history').insert(historyRows);
+      assignedCount = leadIds.length;
     }
 
-    const assignedCount = Number(data?.assignedCount) || 0;
     const modifiedLeads = await Promise.all(leadIds.map((id) => this.getLeadById(id, adminUser)));
     return { assignedCount, leads: modifiedLeads.filter(Boolean) as Lead[] };
   }

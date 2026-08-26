@@ -10,6 +10,8 @@ import {
   LeadHistory,
   BusinessBrand,
   BrandAccess,
+  ImportLeadsResult,
+  DuplicateLeadConflict,
 } from '../types';
 
 const TOKEN_KEY = 'telecaller_crm_jwt_token';
@@ -474,14 +476,7 @@ class ApiClient {
     rows: ParsedLeadRow[],
     assignedTelecallerId?: string | null,
     defaultBrand?: BusinessBrand
-  ): Promise<{
-    importedCount: number;
-    failedCount: number;
-    assignedCount: number;
-    assignedTelecallerId: string | null;
-    leads: Lead[];
-    message: string;
-  }> {
+  ): Promise<ImportLeadsResult> {
     return this.request('/api/admin/leads/import', {
       method: 'POST',
       body: JSON.stringify({

@@ -266,9 +266,15 @@ export const AdminLeadUpload: React.FC<AdminLeadUploadProps> = ({
         origin: { y: 0.6 },
       });
 
-      setUploadSuccessMessage(
-        `Successfully imported ${response.importedCount} leads into CRM database!`
-      );
+      if (response.importedCount > 0) {
+        setUploadSuccessMessage(
+          `Successfully imported and assigned ${response.importedCount} leads into CRM database!`
+        );
+      } else {
+        setUploadSuccessMessage(
+          `No new leads were imported. All ${leadsToImport.length} rows were duplicates (${response.duplicateCount || 0}) or invalid (${response.invalidCount || 0}).`
+        );
+      }
       setImportedLeads([]);
       setSelectedLeadIds([]);
       onLeadsImported();

@@ -14,6 +14,8 @@ import {
   AdminMetrics,
   TelecallerMetrics,
   ParsedLeadRow,
+  ImportLeadsResult,
+  DuplicateLeadConflict,
 } from '../../src/types';
 import { assertCanManageTelecaller, assertLeadAccess, assertManagement, scopedBrand } from '../authorization';
 
@@ -671,7 +673,6 @@ export class DevFallbackRepository {
         result = result.filter((l) => l.brand === userContext.brandAccess);
       }
     }
-    if (effectiveBrand !== 'ALL') result = result.filter((l) => l.brand === effectiveBrand);
 
     if (filter) {
       if (effectiveBrand !== 'ALL') {
@@ -746,7 +747,7 @@ export class DevFallbackRepository {
     assignedTelecallerId?: string | null,
     adminUser?: User,
     defaultBrand?: BusinessBrand
-  ): Promise<{ importedCount: number; failedCount: number; assignedCount: number; assignedTelecallerId: string | null; leads: Lead[]; message: string }> {
+  ): Promise<ImportLeadsResult> {
     this.ensureLoaded();
     const orgId = this.getOrganizationId(adminUser);
     assertManagement(adminUser!);
@@ -763,10 +764,20 @@ export class DevFallbackRepository {
       assertCanManageTelecaller(adminUser!, assignedTc);
       if (!assignedTc.isActive) throw new Error('Cannot assign leads to an inactive telecaller.');
     }
-    const existingPhones = new Set(this.leads.filter((lead) => lead.organizationId === orgId).map((lead) => `${lead.brand}:${canonicalPhone(lead.phone)}`));
+
+    const existingPhoneMap = new Map<string, Lead>();
+    this.leads
+      .filter((lead) => lead.organizationId === orgId)
+      .forEach((lead) => {
+        existingPhoneMap.set(`${lead.brand}:${canonicalPhone(lead.phone)}`, lead);
+      });
+
     const batchPhones = new Set<string>();
+    const duplicateLeads: DuplicateLeadConflict[] = [];
 
     let importedCount = 0;
+    let duplicateCount = 0;
+    let invalidCount = 0;
     let failedCount = 0;
     const newLeads: Lead[] = [];
     const now = new Date().toISOString();
@@ -774,6 +785,7 @@ export class DevFallbackRepository {
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       if (!r.name || !r.phone) {
+        invalidCount++;
         failedCount++;
         continue;
       }
@@ -781,7 +793,41 @@ export class DevFallbackRepository {
       const brand = adminUser!.role === 'HR' ? adminUser!.brandAccess as BusinessBrand : r.brand || defaultBrand || 'APNI_VIDYA';
       if (assignedTc && assignedTc.brandAccess !== brand) throw new Error('Forbidden: Imported lead brand must match selected telecaller brand.');
       const phoneKey = `${brand}:${canonicalPhone(r.phone)}`;
-      if (existingPhones.has(phoneKey) || batchPhones.has(phoneKey)) { failedCount++; continue; }
+
+      if (existingPhoneMap.has(phoneKey)) {
+        duplicateCount++;
+        failedCount++;
+        const existing = existingPhoneMap.get(phoneKey)!;
+        const currentTc = existing.assignedTo ? this.users.find((u) => u.id === existing.assignedTo) : undefined;
+        duplicateLeads.push({
+          leadId: existing.id,
+          name: existing.name,
+          phone: existing.phone,
+          brand: existing.brand,
+          status: existing.status,
+          currentlyAssignedTo: existing.assignedTo,
+          currentlyAssignedName: currentTc ? `${currentTc.name} (${currentTc.loginId})` : existing.assignedTelecallerName || 'Unassigned',
+          reason: 'ALREADY_EXISTS_IN_ORG',
+        });
+        continue;
+      }
+
+      if (batchPhones.has(phoneKey)) {
+        duplicateCount++;
+        failedCount++;
+        duplicateLeads.push({
+          leadId: `batch_dup_${i}`,
+          name: r.name.trim(),
+          phone: r.phone.trim(),
+          brand,
+          status: 'NEW',
+          currentlyAssignedTo: null,
+          currentlyAssignedName: 'Duplicate in batch file',
+          reason: 'DUPLICATE_IN_BATCH',
+        });
+        continue;
+      }
+
       batchPhones.add(phoneKey);
       const leadId = `lead_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
@@ -828,13 +874,23 @@ export class DevFallbackRepository {
     }
 
     this.persistToDisk();
+
+    const message = importedCount > 0
+      ? `Successfully imported and assigned ${importedCount} leads${assignedTc ? ` to ${assignedTc.name}` : ''}.`
+      : `No leads were assigned to ${assignedTc?.name || 'the telecaller'}. All ${rows.length} rows were duplicates or invalid.`;
+
     return {
+      message,
+      totalRows: rows.length,
       importedCount,
-      failedCount,
       assignedCount: assignedTc ? importedCount : 0,
+      duplicateCount,
+      invalidCount,
+      failedCount,
       assignedTelecallerId: assignedTc?.id || null,
+      assignedTelecallerName: assignedTc?.name,
       leads: newLeads,
-      message: `Successfully imported ${importedCount} leads${failedCount > 0 ? ` (${failedCount} skipped due to missing name/phone)` : ''}.`,
+      duplicateLeads,
     };
   }
 

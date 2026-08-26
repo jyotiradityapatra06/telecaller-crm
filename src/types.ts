@@ -266,3 +266,28 @@ export interface ParsedLeadRow {
   errorReason?: string;
   assignedTo?: string;
 }
+
+export interface DuplicateLeadConflict {
+  leadId: string;
+  name: string;
+  phone: string;
+  brand: BusinessBrand;
+  status: LeadStatus;
+  currentlyAssignedTo: string | null;
+  currentlyAssignedName?: string;
+  reason: 'ALREADY_EXISTS_IN_ORG' | 'DUPLICATE_IN_BATCH';
+}
+
+export interface ImportLeadsResult {
+  message: string;
+  totalRows: number;
+  importedCount: number;
+  assignedCount: number;
+  duplicateCount: number;
+  invalidCount: number;
+  failedCount: number;
+  assignedTelecallerId: string | null;
+  assignedTelecallerName?: string;
+  leads: Lead[];
+  duplicateLeads?: DuplicateLeadConflict[];
+}

@@ -209,14 +209,7 @@ adminRouter.post('/leads/import', validateRequest(importLeadsSchema), async (req
 
   try {
     const result = await db.importLeads(rows, assignedTelecallerId, req.user, defaultBrand);
-    res.status(201).json({
-      message: `Successfully imported ${result.importedCount} leads (${result.failedCount} invalid rows skipped).`,
-      importedCount: result.importedCount,
-      failedCount: result.failedCount,
-      assignedCount: result.assignedCount,
-      assignedTelecallerId: result.assignedTelecallerId,
-      leads: result.leads,
-    });
+    res.status(200).json(result);
   } catch (err: any) {
     const errorMsg = process.env.NODE_ENV === 'production' ? 'Internal server error.' : err.message || 'Failed to import leads.';
     res.status(500).json({ error: errorMsg });
