@@ -66,6 +66,11 @@ export default function App() {
       return true;
     } catch (err) {
       console.error('Failed to load CRM data:', err);
+      if (!api.isAuthenticated()) {
+        setCurrentUser(null);
+        setLeads([]);
+        setAllTelecallers([]);
+      }
       return false;
     } finally {
       setIsLoadingInitial(false);

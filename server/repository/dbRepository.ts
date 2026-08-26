@@ -631,7 +631,8 @@ export class DbRepository {
 
     const { data: leadRows, error } = await query.order('created_at', { ascending: false });
 
-    if (error || !leadRows || leadRows.length === 0) return [];
+    if (error) throw repositoryError('Failed to retrieve leads', error);
+    if (!leadRows || leadRows.length === 0) return [];
 
     let filteredRows = leadRows;
     if (filter?.search) {
@@ -1227,7 +1228,8 @@ export class DbRepository {
     }
 
     const { data: fuRows, error } = await query;
-    if (error || !fuRows) return { overdue: [], today: [], upcoming: [], completed: [] };
+    if (error) throw repositoryError('Failed to retrieve follow-ups', error);
+    if (!fuRows) return { overdue: [], today: [], upcoming: [], completed: [] };
 
     const leads = await this.getAllLeads(undefined, userContext);
     const leadMap = new Map(leads.map((l) => [l.id, l]));

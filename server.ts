@@ -180,6 +180,10 @@ async function startServer() {
 
   // Reset notification endpoint
   app.post('/api/reset-data', (_req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+      res.status(404).json({ error: 'Endpoint not found.' });
+      return;
+    }
     res.json({ message: 'Database state is managed by Supabase PostgreSQL migrations and seed scripts.' });
   });
 
