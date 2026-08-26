@@ -237,6 +237,7 @@ export interface AuthUser {
   email?: string;
   isActive: boolean;
   avatar?: string;
+  metrics?: TelecallerMetrics;
 }
 
 export type Telecaller = AuthUser;

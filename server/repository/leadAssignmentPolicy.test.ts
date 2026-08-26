@@ -32,3 +32,25 @@ test('inactive historical rows do not block a new active assignment', () => {
   const rows = [{ organizationId: 'org-a', leadId: 'lead-1', telecallerId: 'priya', isActive: false }];
   assert.equal(hasActiveAssignment(rows, 'org-a', 'lead-1', 'priya'), false);
 });
+
+test('100 Priya contacts add 100 Tejasri work items and re-upload adds zero', () => {
+  const assignments = Array.from({ length: 100 }, (_, index) => ({ organizationId: 'org-a', leadId: `lead-${index}`, telecallerId: 'priya' }));
+  const priyaBefore = assignments.filter((row) => row.telecallerId === 'priya').length;
+  let firstAssigned = 0;
+  for (let index = 0; index < 100; index++) {
+    const leadId = `lead-${index}`;
+    if (!hasActiveAssignment(assignments, 'org-a', leadId, 'tejasri')) {
+      assignments.push({ organizationId: 'org-a', leadId, telecallerId: 'tejasri' });
+      firstAssigned++;
+    }
+  }
+  let secondAssigned = 0;
+  for (let index = 0; index < 100; index++) {
+    if (!hasActiveAssignment(assignments, 'org-a', `lead-${index}`, 'tejasri')) secondAssigned++;
+  }
+  assert.equal(priyaBefore, 100);
+  assert.equal(assignments.filter((row) => row.telecallerId === 'priya').length, 100);
+  assert.equal(assignments.filter((row) => row.telecallerId === 'tejasri').length, 100);
+  assert.equal(firstAssigned, 100);
+  assert.equal(secondAssigned, 0);
+});
