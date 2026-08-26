@@ -30,6 +30,7 @@ const canonicalPhone = (phone: string): string => {
 // ============================================================================
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'crm_db.json');
+type LocalAssignment = { id: string; organizationId: string; leadId: string; telecallerId: string; assignedBy?: string; isActive: boolean; status: LeadStatus; notes?: string; lastCallAt?: string; nextFollowUpAt?: string; totalCallsCount: number; createdAt: string; updatedAt: string };
 
 export class DevFallbackRepository {
   private defaultOrgId = 'org_demo_001';
@@ -39,6 +40,7 @@ export class DevFallbackRepository {
   private callActivities: CallActivity[] = [];
   private followUps: FollowUp[] = [];
   private leadHistories: LeadHistory[] = [];
+  private leadAssignments: LocalAssignment[] = [];
   private initialized = false;
 
   constructor() {
@@ -111,6 +113,11 @@ export class DevFallbackRepository {
             ...h,
             organizationId: h.organizationId || 'org_demo_001',
           }));
+          this.leadAssignments = Array.isArray(data.leadAssignments) ? data.leadAssignments : [];
+          if (!this.leadAssignments.length) {
+            const now = new Date().toISOString();
+            this.leadAssignments = this.leads.filter((l) => l.assignedTo).map((l) => ({ id: `legacy_${l.id}_${l.assignedTo}`, organizationId: l.organizationId!, leadId: l.id, telecallerId: l.assignedTo!, isActive: true, status: l.status, notes: l.notes, lastCallAt: l.lastCallAt, nextFollowUpAt: l.nextFollowUpAt, totalCallsCount: l.totalCallsCount, createdAt: l.createdAt || now, updatedAt: l.updatedAt || now }));
+          }
 
           this.recalculateFollowUpStatuses();
           console.log(`📦 [DevFallback] Loaded local development database: ${this.leads.length} leads, ${this.users.length} users, ${this.organizations.length} organizations.`);
@@ -138,6 +145,7 @@ export class DevFallbackRepository {
         callActivities: this.callActivities,
         followUps: this.followUps,
         leadHistories: this.leadHistories,
+        leadAssignments: this.leadAssignments,
         lastSaved: new Date().toISOString(),
       };
 
@@ -666,9 +674,11 @@ export class DevFallbackRepository {
     const orgId = this.getOrganizationId(userContext);
     const effectiveBrand = scopedBrand(userContext, filter?.brand);
     let result = this.leads.filter((l) => l.organizationId === orgId);
+    const requestedCaller = userContext.role === 'TELECALLER' ? userContext.id : (filter?.assignedTo && filter.assignedTo !== 'ALL' && filter.assignedTo !== 'UNASSIGNED' ? filter.assignedTo : undefined);
+    const assignmentFor = (leadId: string) => requestedCaller ? this.leadAssignments.find((a) => a.organizationId === orgId && a.leadId === leadId && a.telecallerId === requestedCaller && a.isActive) : undefined;
 
     if (userContext && userContext.role === 'TELECALLER') {
-      result = result.filter((l) => l.assignedTo === userContext.id || l.assignedTo === userContext.loginId);
+      result = result.filter((l) => Boolean(assignmentFor(l.id)));
       if (userContext.brandAccess && userContext.brandAccess !== 'BOTH') {
         result = result.filter((l) => l.brand === userContext.brandAccess);
       }
@@ -680,9 +690,9 @@ export class DevFallbackRepository {
       }
       if (filter.assignedTo) {
         if (filter.assignedTo === 'UNASSIGNED') {
-          result = result.filter((l) => !l.assignedTo);
+          result = result.filter((l) => !this.leadAssignments.some((a) => a.organizationId === orgId && a.leadId === l.id && a.isActive));
         } else {
-          result = result.filter((l) => l.assignedTo === filter.assignedTo);
+          result = result.filter((l) => Boolean(assignmentFor(l.id)));
         }
       }
       if (filter.status) {
@@ -704,12 +714,14 @@ export class DevFallbackRepository {
 
     // Attach activeFollowUp
     return result.map((lead) => {
+      const assignment = assignmentFor(lead.id);
       const activeFu = this.followUps
-        .filter((f) => f.organizationId === orgId && f.leadId === lead.id && !f.isCompleted && f.status !== 'COMPLETED' && f.status !== 'CANCELLED')
+        .filter((f) => f.organizationId === orgId && f.leadId === lead.id && (!requestedCaller || f.telecallerId === requestedCaller) && !f.isCompleted && f.status !== 'COMPLETED' && f.status !== 'CANCELLED')
         .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
 
       return {
         ...lead,
+        ...(assignment ? { assignedTo: assignment.telecallerId, status: assignment.status, notes: assignment.notes, lastCallAt: assignment.lastCallAt, nextFollowUpAt: assignment.nextFollowUpAt, totalCallsCount: assignment.totalCallsCount } : {}),
         activeFollowUp: activeFu,
       };
     });
@@ -723,7 +735,11 @@ export class DevFallbackRepository {
     const orgId = this.getOrganizationId(userContext);
     const lead = this.leads.find((l) => l.id === id && l.organizationId === orgId);
     if (!lead) return undefined;
-    assertLeadAccess(userContext, lead);
+    if (userContext.role === 'TELECALLER') {
+      const assignment = this.leadAssignments.find((a) => a.organizationId === orgId && a.leadId === id && a.telecallerId === userContext.id && a.isActive);
+      if (!assignment || lead.brand !== userContext.brandAccess) throw new Error('Forbidden: Lead is not assigned to you.');
+      Object.assign(lead, { assignedTo: userContext.id, status: assignment.status, notes: assignment.notes, lastCallAt: assignment.lastCallAt, nextFollowUpAt: assignment.nextFollowUpAt, totalCallsCount: assignment.totalCallsCount });
+    } else assertLeadAccess(userContext, lead);
 
     const callLogs = this.callActivities.filter((c) => c.leadId === id && c.organizationId === orgId);
     const followUps = this.followUps.filter((f) => f.leadId === id && f.organizationId === orgId);
@@ -795,20 +811,16 @@ export class DevFallbackRepository {
       const phoneKey = `${brand}:${canonicalPhone(r.phone)}`;
 
       if (existingPhoneMap.has(phoneKey)) {
-        duplicateCount++;
-        failedCount++;
         const existing = existingPhoneMap.get(phoneKey)!;
-        const currentTc = existing.assignedTo ? this.users.find((u) => u.id === existing.assignedTo) : undefined;
-        duplicateLeads.push({
-          leadId: existing.id,
-          name: existing.name,
-          phone: existing.phone,
-          brand: existing.brand,
-          status: existing.status,
-          currentlyAssignedTo: existing.assignedTo,
-          currentlyAssignedName: currentTc ? `${currentTc.name} (${currentTc.loginId})` : existing.assignedTelecallerName || 'Unassigned',
-          reason: 'ALREADY_EXISTS_IN_ORG',
-        });
+        if (!assignedTc) { duplicateCount++; failedCount++; continue; }
+        const already = this.leadAssignments.some((a) => a.organizationId === orgId && a.leadId === existing.id && a.telecallerId === assignedTc!.id && a.isActive);
+        if (already) {
+          duplicateCount++; failedCount++;
+          duplicateLeads.push({ leadId: existing.id, name: existing.name, phone: existing.phone, brand: existing.brand, status: existing.status, currentlyAssignedTo: assignedTc.id, currentlyAssignedName: assignedTc.name, reason: 'ALREADY_ASSIGNED_TO_SELECTED_TELECALLER' });
+        } else {
+          this.leadAssignments.push({ id: `asgn_${Date.now()}_${i}`, organizationId: orgId, leadId: existing.id, telecallerId: assignedTc.id, assignedBy: adminId, isActive: true, status: 'NEW', totalCallsCount: 0, createdAt: now, updatedAt: now });
+          importedCount++;
+        }
         continue;
       }
 
@@ -860,6 +872,7 @@ export class DevFallbackRepository {
       this.leads.unshift(newLead);
       newLeads.push(newLead);
       importedCount++;
+      if (assignedTc) this.leadAssignments.push({ id: `asgn_${Date.now()}_${i}`, organizationId: orgId, leadId, telecallerId: assignedTc.id, assignedBy: adminId, isActive: true, status: 'NEW', totalCallsCount: 0, createdAt: now, updatedAt: now });
 
       this.leadHistories.unshift({
         id: `lh_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -884,6 +897,10 @@ export class DevFallbackRepository {
       totalRows: rows.length,
       importedCount,
       assignedCount: assignedTc ? importedCount : 0,
+      newContactsCreated: newLeads.length,
+      existingContactsReused: Math.max(0, importedCount - newLeads.length),
+      alreadyAssignedCount: duplicateCount,
+      existingAssignmentsModified: 0,
       duplicateCount,
       invalidCount,
       failedCount,
@@ -1043,7 +1060,8 @@ export class DevFallbackRepository {
     const lead = this.leads.find((l) => l.id === data.leadId && l.organizationId === orgId);
     if (!lead) throw new Error(`Lead not found with ID: ${data.leadId}`);
     if (!userContext || userContext.role !== 'TELECALLER') throw new Error('Forbidden: Telecaller authorization required.');
-    assertLeadAccess(userContext, lead);
+    const assignment = this.leadAssignments.find((a) => a.organizationId === orgId && a.leadId === lead.id && a.telecallerId === userContext.id && a.isActive);
+    if (!assignment || lead.brand !== userContext.brandAccess) throw new Error('Forbidden: Lead is not assigned to you.');
 
     const tcId = userContext?.id || lead.assignedTo || 'usr_tc_vidya_1';
     const tcUser = this.users.find((u) => u.id === tcId && u.organizationId === orgId);
@@ -1065,6 +1083,12 @@ export class DevFallbackRepository {
     };
 
     this.callActivities.unshift(activity);
+
+    assignment.status = data.status;
+    assignment.lastCallAt = now;
+    assignment.totalCallsCount += 1;
+    assignment.updatedAt = now;
+    if (data.note) assignment.notes = assignment.notes ? `${assignment.notes}\n${data.note}` : data.note;
 
     // Update lead
     lead.status = data.status;
@@ -1104,6 +1128,7 @@ export class DevFallbackRepository {
 
       this.followUps.unshift(createdFollowUp);
       lead.nextFollowUpAt = createdFollowUp.dateTime;
+      assignment.nextFollowUpAt = createdFollowUp.dateTime;
     }
 
     // History Log
@@ -1141,7 +1166,8 @@ export class DevFallbackRepository {
     const lead = this.leads.find((l) => l.id === data.leadId && l.organizationId === orgId);
     if (!lead) throw new Error(`Lead not found with ID: ${data.leadId}`);
     if (!userContext || userContext.role !== 'TELECALLER') throw new Error('Forbidden: Telecaller authorization required.');
-    assertLeadAccess(userContext, lead);
+    const assignment = this.leadAssignments.find((a) => a.organizationId === orgId && a.leadId === lead.id && a.telecallerId === userContext.id && a.isActive);
+    if (!assignment || lead.brand !== userContext.brandAccess) throw new Error('Forbidden: Lead is not assigned to you.');
 
     const tcId = userContext?.id || lead.assignedTo || 'usr_tc_vidya_1';
     const tcUser = this.users.find((u) => u.id === tcId && u.organizationId === orgId);
@@ -1168,6 +1194,8 @@ export class DevFallbackRepository {
 
     this.followUps.unshift(fu);
     lead.nextFollowUpAt = fu.dateTime;
+    assignment.nextFollowUpAt = fu.dateTime;
+    assignment.updatedAt = now;
     lead.updatedAt = now;
 
     this.leadHistories.unshift({
@@ -1198,8 +1226,9 @@ export class DevFallbackRepository {
 
     const lead = this.leads.find((l) => l.id === fu.leadId && l.organizationId === orgId);
     if (!lead) throw new Error(`Lead not found for follow-up ID: ${followUpId}`);
-    assertLeadAccess(user, lead);
     if (fu.telecallerId !== user.id) throw new Error('Forbidden: Follow-up is not assigned to you.');
+    const assignment = this.leadAssignments.find((a) => a.organizationId === orgId && a.leadId === lead.id && a.telecallerId === user.id && a.isActive);
+    if (!assignment) throw new Error('Forbidden: Lead is not assigned to you.');
 
     const now = new Date().toISOString();
     fu.status = 'COMPLETED';
@@ -1210,6 +1239,8 @@ export class DevFallbackRepository {
     }
 
     lead.nextFollowUpAt = undefined;
+    assignment.nextFollowUpAt = undefined;
+    assignment.updatedAt = now;
     lead.updatedAt = now;
 
     this.leadHistories.unshift({

@@ -600,6 +600,17 @@ export class DbRepository {
     const orgId = this.getOrganizationId(userContext);
     const effectiveBrand = scopedBrand(userContext, filter?.brand);
     await this.recalculateFollowUpStatuses(orgId);
+    const requestedCaller = userContext.role === 'TELECALLER'
+      ? userContext.id
+      : (filter?.assignedTo && filter.assignedTo !== 'ALL' && filter.assignedTo !== 'UNASSIGNED' ? filter.assignedTo : undefined);
+    let assignmentRows: any[] = [];
+    if (requestedCaller) {
+      let assignmentQuery = this.client.from('lead_assignments').select('*').eq('organization_id', orgId).eq('assigned_to', requestedCaller).eq('is_active', true);
+      if (filter?.status && filter.status !== ('ALL' as unknown as LeadStatus)) assignmentQuery = assignmentQuery.eq('status', filter.status);
+      const { data, error: assignmentError } = await assignmentQuery;
+      if (assignmentError) throw repositoryError('Failed to retrieve telecaller worklist', assignmentError);
+      assignmentRows = data || [];
+    }
 
     let query = this.client.from('leads').select('*').eq('organization_id', orgId);
 
@@ -607,17 +618,21 @@ export class DbRepository {
       query = query.eq('brand', effectiveBrand);
     }
 
-    if (userContext.role === 'TELECALLER') query = query.eq('assigned_to', userContext.id);
+    if (requestedCaller) {
+      const assignedLeadIds = assignmentRows.map((a) => a.lead_id);
+      if (!assignedLeadIds.length) return [];
+      query = query.in('id', assignedLeadIds);
+    }
 
     if (filter?.assignedTo !== undefined) {
       if (filter.assignedTo === 'UNASSIGNED') {
-        query = query.is('assigned_to', null);
-      } else if (filter.assignedTo !== 'ALL') {
-        query = query.eq('assigned_to', filter.assignedTo);
+        const { data: active } = await this.client.from('lead_assignments').select('lead_id').eq('organization_id', orgId).eq('is_active', true);
+        const activeIds = (active || []).map((a) => a.lead_id);
+        if (activeIds.length) query = query.not('id', 'in', `(${activeIds.join(',')})`);
       }
     }
 
-    if (filter?.status && filter.status !== ('ALL' as unknown as LeadStatus)) {
+    if (!requestedCaller && filter?.status && filter.status !== ('ALL' as unknown as LeadStatus)) {
       query = query.eq('status', filter.status);
     }
 
@@ -648,6 +663,7 @@ export class DbRepository {
     const userMap = new Map(users.map((u) => [u.id, u]));
 
     const leadIds = filteredRows.map((l) => l.id);
+    const assignmentMap = new Map(assignmentRows.map((a) => [a.lead_id, a]));
 
     const [{ data: historyRows }, { data: callRows }, { data: fuRows }] = await Promise.all([
       this.client
@@ -702,13 +718,15 @@ export class DbRepository {
     return filteredRows.map((r) => {
       const lead = leadBaseMap.get(r.id)!;
       const history = historyMap.get(lead.id) || [];
-      const callLogs = callMap.get(lead.id) || [];
-      const followUps = fuMap.get(lead.id) || [];
+      const assignment = assignmentMap.get(lead.id);
+      const callLogs = (callMap.get(lead.id) || []).filter((c) => !requestedCaller || c.telecallerId === requestedCaller);
+      const followUps = (fuMap.get(lead.id) || []).filter((f) => !requestedCaller || f.telecallerId === requestedCaller);
       const activeFollowUp = followUps.find((f) => f.status === 'PENDING' || f.status === 'OVERDUE');
       const tc = lead.assignedTo ? userMap.get(lead.assignedTo) : undefined;
 
       return {
         ...lead,
+        ...(assignment ? { assignedTo: assignment.assigned_to, status: assignment.status, notes: assignment.notes, lastCallAt: assignment.last_call_at, nextFollowUpAt: assignment.next_follow_up_at, totalCallsCount: assignment.total_calls_count } : {}),
         assignedTelecallerName: tc ? tc.name : undefined,
         history,
         callLogs,
@@ -735,8 +753,14 @@ export class DbRepository {
 
     const users = await this.getAllUsers(userContext);
     const userMap = new Map(users.map((u) => [u.id, u]));
-    const lead = mapLeadFromRow(data, userMap);
-    assertLeadAccess(userContext, lead);
+    let lead = mapLeadFromRow(data, userMap);
+    if (userContext.role === 'TELECALLER') {
+      const { data: assignment } = await this.client.from('lead_assignments').select('*').eq('organization_id', orgId).eq('lead_id', id).eq('assigned_to', userContext.id).eq('is_active', true).maybeSingle();
+      if (!assignment || lead.brand !== userContext.brandAccess) throw new Error('Forbidden: Lead is not assigned to you.');
+      lead = { ...lead, assignedTo: userContext.id, status: assignment.status, notes: assignment.notes, lastCallAt: assignment.last_call_at, nextFollowUpAt: assignment.next_follow_up_at, totalCallsCount: assignment.total_calls_count };
+    } else {
+      assertLeadAccess(userContext, lead);
+    }
 
     return this.enrichLead(lead, userMap, orgId);
   }
@@ -764,8 +788,9 @@ export class DbRepository {
     ]);
 
     const history = (historyRows || []).map((h) => mapLeadHistoryFromRow(h, userMap));
-    const callLogs = (callRows || []).map((c) => mapCallActivityFromRow(c, userMap));
-    const followUps = (fuRows || []).map((f) => mapFollowUpFromRow(f, new Map([[lead.id, lead]]), userMap));
+    const callerId = lead.assignedTo;
+    const callLogs = (callRows || []).map((c) => mapCallActivityFromRow(c, userMap)).filter((c) => !callerId || c.telecallerId === callerId);
+    const followUps = (fuRows || []).map((f) => mapFollowUpFromRow(f, new Map([[lead.id, lead]]), userMap)).filter((f) => !callerId || f.telecallerId === callerId);
     const activeFollowUp = followUps.find((f) => f.status === 'PENDING' || f.status === 'OVERDUE');
 
     const tc = lead.assignedTo ? userMap.get(lead.assignedTo) : undefined;
@@ -811,6 +836,44 @@ export class DbRepository {
     if (tc) assertCanManageTelecaller(adminUser, tc);
     if (tc && !tc.isActive) throw new Error('Cannot assign leads to an inactive telecaller.');
     const admin = adminUser;
+
+    // Selected-telecaller uploads are handled in one database transaction. The RPC
+    // reuses the shared contact and idempotently inserts only that caller's work item.
+    if (tc) {
+      const normalizedRows = rows.map((row) => ({
+        ...row,
+        brand: adminUser.role === 'HR' ? adminUser.brandAccess : row.brand || effectiveDefaultBrand,
+      }));
+      const { data: summary, error: importError } = await this.client.rpc('import_leads_for_telecaller_atomic', {
+        p_org_id: orgId,
+        p_admin_id: admin.id,
+        p_telecaller_id: tc.id,
+        p_rows: normalizedRows,
+      });
+      if (importError) throw repositoryError('Atomic lead upload failed', importError);
+      const assignedCount = Number(summary?.assignedCount) || 0;
+      const newContactsCreated = Number(summary?.newContactsCreated) || 0;
+      const existingContactsReused = Number(summary?.existingContactsReused) || 0;
+      const alreadyAssignedCount = Number(summary?.alreadyAssignedCount) || 0;
+      const invalid = Number(summary?.invalidCount) || 0;
+      return {
+        message: `${assignedCount} assigned to ${tc.name}; ${newContactsCreated} new contacts created; ${existingContactsReused} existing contacts reused; ${alreadyAssignedCount} already assigned and skipped; 0 existing assignments modified.`,
+        totalRows: rows.length,
+        importedCount: newContactsCreated,
+        assignedCount,
+        newContactsCreated,
+        existingContactsReused,
+        alreadyAssignedCount,
+        existingAssignmentsModified: 0,
+        duplicateCount: alreadyAssignedCount,
+        invalidCount: invalid,
+        failedCount: alreadyAssignedCount + invalid,
+        assignedTelecallerId: tc.id,
+        assignedTelecallerName: tc.name,
+        leads: [],
+        duplicateLeads: [],
+      };
+    }
 
     const existingLeadsList = await this.getAllLeads({ brand: effectiveDefaultBrand }, adminUser);
     const existingPhoneMap = new Map<string, Lead>();
@@ -991,6 +1054,10 @@ export class DbRepository {
       totalRows: rows.length,
       importedCount,
       assignedCount: tc ? importedCount : 0,
+      newContactsCreated: importedCount,
+      existingContactsReused: 0,
+      alreadyAssignedCount: duplicateCount,
+      existingAssignmentsModified: 0,
       duplicateCount,
       invalidCount,
       failedCount,
@@ -1415,8 +1482,16 @@ export class DbRepository {
     const totalLeads = filteredLeads.length;
     const vidyaLeads = allLeads.filter((l) => l.brand === 'APNI_VIDYA').length;
     const estateLeads = allLeads.filter((l) => l.brand === 'APNI_ESTATE').length;
-    const assignedLeads = filteredLeads.filter((l) => l.assignedTo !== null).length;
-    const unassignedLeads = totalLeads - assignedLeads;
+    const scopedIds = filteredLeads.map((l) => l.id);
+    let activeAssignmentRows: any[] = [];
+    if (scopedIds.length) {
+      const { data, error: assignmentMetricError } = await this.client.from('lead_assignments').select('lead_id,status,assigned_to').eq('organization_id', orgId).eq('is_active', true).in('lead_id', scopedIds);
+      if (assignmentMetricError) throw repositoryError('Failed to fetch assignment metrics', assignmentMetricError);
+      activeAssignmentRows = data || [];
+    }
+    const assignedLeads = activeAssignmentRows.length;
+    const assignedContactIds = new Set(activeAssignmentRows.map((a) => a.lead_id));
+    const unassignedLeads = filteredLeads.filter((l) => !assignedContactIds.has(l.id)).length;
 
     const { data: allCalls, error: callsError } = await this.client
       .from('call_activities')

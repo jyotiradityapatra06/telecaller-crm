@@ -266,9 +266,9 @@ export const AdminLeadUpload: React.FC<AdminLeadUploadProps> = ({
         origin: { y: 0.6 },
       });
 
-      if (response.importedCount > 0) {
+      if (response.assignedCount > 0) {
         setUploadSuccessMessage(
-          `Successfully imported and assigned ${response.importedCount} leads into CRM database!`
+          `${response.assignedCount} assigned; ${response.newContactsCreated} new contacts; ${response.existingContactsReused} existing contacts reused; ${response.alreadyAssignedCount} already assigned and skipped; ${response.existingAssignmentsModified} assignments modified.`
         );
       } else {
         setUploadSuccessMessage(

@@ -227,8 +227,8 @@ export const HrLeadUpload: React.FC<HrLeadUploadProps> = ({
               <div className="mt-5 p-4 bg-amber-100/70 border border-amber-300 rounded-2xl text-amber-900 text-sm">
                 <strong>Important Notice:</strong> No leads were assigned to{' '}
                 {selectedTelecaller?.name}. All {importResult.totalRows || 'uploaded'} rows were
-                duplicates of existing leads or invalid numbers. See the duplicate report below if you
-                wish to deliberately reassign any existing leads.
+                already belonged to this same telecaller or were invalid. Assignments belonging to other
+                telecallers were not changed.
               </div>
             )}
 
@@ -245,7 +245,7 @@ export const HrLeadUpload: React.FC<HrLeadUploadProps> = ({
 
               <div className="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-4 text-center">
                 <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wider block">
-                  Imported & Assigned
+                  Assigned
                 </span>
                 <b className="text-2xl font-bold text-emerald-700 mt-1 block">
                   {importResult.assignedCount}
@@ -254,7 +254,7 @@ export const HrLeadUpload: React.FC<HrLeadUploadProps> = ({
 
               <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-4 text-center">
                 <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider block">
-                  Duplicates Skipped
+                  Already Assigned
                 </span>
                 <b className="text-2xl font-bold text-amber-700 mt-1 block">
                   {importResult.duplicateCount}
@@ -269,6 +269,11 @@ export const HrLeadUpload: React.FC<HrLeadUploadProps> = ({
                   {importResult.invalidCount}
                 </b>
               </div>
+            </div>
+            <div className="mt-4 text-sm text-slate-600 grid sm:grid-cols-3 gap-2">
+              <span>{importResult.newContactsCreated} new contacts created</span>
+              <span>{importResult.existingContactsReused} existing contacts reused</span>
+              <span>{importResult.existingAssignmentsModified} existing assignments modified</span>
             </div>
 
             {/* Actions */}
@@ -293,7 +298,7 @@ export const HrLeadUpload: React.FC<HrLeadUploadProps> = ({
             </div>
           </div>
 
-          {/* DUPLICATE REPORT & EXPLICIT REASSIGNMENT */}
+          {/* Same-telecaller duplicates only; cross-telecaller contacts are assigned automatically. */}
           {importResult.duplicateLeads && importResult.duplicateLeads.length > 0 && (
             <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-4">
@@ -303,22 +308,10 @@ export const HrLeadUpload: React.FC<HrLeadUploadProps> = ({
                     Duplicate Numbers Detected ({importResult.duplicateLeads.length})
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    These phone numbers already exist in the organization. They were skipped to protect existing assignments.
+                    These contacts are already assigned to the selected telecaller, or repeat in this file.
                   </p>
                 </div>
 
-                {selectedTelecaller && (
-                  <button
-                    disabled={reassignBusy || selectedConflictIds.length === 0}
-                    onClick={handleReassignConflicts}
-                    className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-sm px-4 py-2 rounded-xl flex items-center gap-2 disabled:opacity-50 transition"
-                  >
-                    <ArrowRight className="w-4 h-4" />
-                    {reassignBusy
-                      ? 'Reassigning...'
-                      : `Reassign Selected (${selectedConflictIds.length}) to ${selectedTelecaller.name}`}
-                  </button>
-                )}
               </div>
 
               {/* Table */}
@@ -385,9 +378,7 @@ export const HrLeadUpload: React.FC<HrLeadUploadProps> = ({
                               </span>
                             </td>
                             <td className="p-3 text-xs text-amber-700 font-medium">
-                              {dup.reason === 'DUPLICATE_IN_BATCH'
-                                ? 'Repeated in same file'
-                                : 'Already exists in DB'}
+                              {dup.reason === 'DUPLICATE_IN_BATCH' ? 'Repeated in same file' : 'Already assigned to selected telecaller'}
                             </td>
                           </tr>
                         );

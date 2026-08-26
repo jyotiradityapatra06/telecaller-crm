@@ -275,14 +275,24 @@ export interface DuplicateLeadConflict {
   status: LeadStatus;
   currentlyAssignedTo: string | null;
   currentlyAssignedName?: string;
-  reason: 'ALREADY_EXISTS_IN_ORG' | 'DUPLICATE_IN_BATCH';
+  reason: 'ALREADY_ASSIGNED_TO_SELECTED_TELECALLER' | 'ALREADY_EXISTS_IN_ORG' | 'DUPLICATE_IN_BATCH';
 }
+
+export type LeadUploadClassification =
+  | 'new_contact'
+  | 'existing_contact_new_assignment'
+  | 'already_assigned_to_selected_telecaller'
+  | 'invalid';
 
 export interface ImportLeadsResult {
   message: string;
   totalRows: number;
   importedCount: number;
   assignedCount: number;
+  newContactsCreated: number;
+  existingContactsReused: number;
+  alreadyAssignedCount: number;
+  existingAssignmentsModified: number;
   duplicateCount: number;
   invalidCount: number;
   failedCount: number;
