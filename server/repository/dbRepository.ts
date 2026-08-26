@@ -96,7 +96,8 @@ export class DbRepository {
       .select('*')
       .eq('organization_id', orgId);
 
-    if (error || !data) return [];
+    if (error) throw repositoryError('Failed to fetch organization users', error);
+    if (!data) return [];
     return data.map(mapUserFromRow).map(({ passwordHash, ...safeUser }) => safeUser);
   }
 
@@ -114,7 +115,8 @@ export class DbRepository {
       .eq('organization_id', orgId)
       .eq('role', 'TELECALLER');
 
-    if (error || !data) return [];
+    if (error) throw repositoryError('Failed to fetch telecallers', error);
+    if (!data) return [];
 
     return data
       .map(mapUserFromRow)
@@ -134,7 +136,11 @@ export class DbRepository {
       query = query.eq('organization_id', orgId);
     }
     const { data, error } = await query.single();
-    if (error || !data) return undefined;
+    if (error) {
+      if (error.code === 'PGRST116') return undefined;
+      throw repositoryError('Failed to find user', error);
+    }
+    if (!data) return undefined;
     return mapUserFromRow(data);
   }
 
@@ -154,7 +160,8 @@ export class DbRepository {
 
     const { data, error } = await query;
 
-    if (error || !data || data.length === 0) return undefined;
+    if (error) throw repositoryError('Failed to find login ID', error);
+    if (!data || data.length === 0) return undefined;
     if (data.length > 1) {
       throw new Error('Ambiguous login ID: Multiple accounts found across organizations. Please contact your CRM Administrator.');
     }
@@ -1090,12 +1097,13 @@ export class DbRepository {
 
     let createdFollowUp: FollowUp | undefined = undefined;
     if (rpcData.followUpId) {
-      const { data: fuRow } = await this.client
+      const { data: fuRow, error: fuError } = await this.client
         .from('follow_ups')
         .select('*')
         .eq('organization_id', orgId)
         .eq('id', rpcData.followUpId)
         .single();
+      if (fuError) throw repositoryError('Failed to load call follow-up', fuError);
       if (fuRow) {
         createdFollowUp = mapFollowUpFromRow(fuRow, new Map([[updatedLead!.id, updatedLead!]]), userMap);
       }
@@ -1279,12 +1287,13 @@ export class DbRepository {
     }
     const todayStr = new Date().toISOString().split('T')[0];
 
-    await this.client
+    const { error } = await this.client
       .from('follow_ups')
       .update({ status: 'OVERDUE', updated_at: new Date().toISOString() })
       .eq('organization_id', orgId)
       .eq('status', 'PENDING')
       .lt('due_date', todayStr);
+    if (error) throw repositoryError('Failed to update overdue follow-ups', error);
   }
 
   // --- LEAD HISTORY ---
@@ -1333,10 +1342,11 @@ export class DbRepository {
     const assignedLeads = filteredLeads.filter((l) => l.assignedTo !== null).length;
     const unassignedLeads = totalLeads - assignedLeads;
 
-    const { data: allCalls } = await this.client
+    const { data: allCalls, error: callsError } = await this.client
       .from('call_activities')
       .select('*')
       .eq('organization_id', orgId);
+    if (callsError) throw repositoryError('Failed to fetch management call metrics', callsError);
 
     const scopedLeadIds = new Set(filteredLeads.map((lead) => lead.id));
     const callsList = (allCalls || []).filter((call) => scopedLeadIds.has(call.lead_id));
@@ -1461,11 +1471,12 @@ export class DbRepository {
 
     const assignedLeadsList = await this.getAllLeads({ assignedTo: telecallerId }, userContext);
 
-    const { data: callsData } = await this.client
+    const { data: callsData, error: callsError } = await this.client
       .from('call_activities')
       .select('called_at, created_at')
       .eq('organization_id', orgId)
       .eq('telecaller_id', telecallerId);
+    if (callsError) throw repositoryError('Failed to fetch telecaller call metrics', callsError);
 
     const callsMadeToday = (callsData || []).filter((c) => {
       const ts = c.called_at || c.created_at || '';
