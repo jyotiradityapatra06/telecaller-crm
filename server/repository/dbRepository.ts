@@ -793,7 +793,7 @@ export class DbRepository {
     assignedTelecallerId?: string | null,
     adminUser?: User,
     defaultBrand?: BusinessBrand
-  ): Promise<{ importedCount: number; failedCount: number; leads: Lead[] }> {
+  ): Promise<{ importedCount: number; failedCount: number; assignedCount: number; assignedTelecallerId: string | null; leads: Lead[] }> {
     if (this.useFallback) return this.fallbackRepo.importLeads(rows, assignedTelecallerId, adminUser, defaultBrand);
     if (!adminUser) {
       throw new Error('Unauthorized: Admin user context required for lead import.');
@@ -905,13 +905,55 @@ export class DbRepository {
       const { error: err1 } = await this.client.from('leads').insert(leadRowsToInsert);
       if (err1) throw new Error(`Lead import transaction failed: ${err1.message}`);
 
-      await this.client.from('lead_history').insert(historyRowsToInsert);
+      const { error: historyError } = await this.client.from('lead_history').insert(historyRowsToInsert);
+      if (historyError) throw repositoryError('Lead import history write failed', historyError);
       if (assignmentRowsToInsert.length > 0) {
-        await this.client.from('lead_assignments').insert(assignmentRowsToInsert);
+        const { error: assignmentError } = await this.client.from('lead_assignments').insert(assignmentRowsToInsert);
+        if (assignmentError) throw repositoryError('Lead import assignment write failed', assignmentError);
+      }
+
+      const leadIds = leadRowsToInsert.map((row) => row.id);
+      const { data: persistedLeads, error: verificationError } = await this.client
+        .from('leads')
+        .select('id, organization_id, brand, assigned_to')
+        .eq('organization_id', orgId)
+        .in('id', leadIds);
+      if (verificationError) throw repositoryError('Lead import verification failed', verificationError);
+      const validLeadIds = new Set(
+        (persistedLeads || [])
+          .filter((lead) => lead.organization_id === orgId && (!tc || (lead.assigned_to === tc.id && lead.brand === tc.brandAccess)))
+          .map((lead) => lead.id)
+      );
+      if (validLeadIds.size !== leadRowsToInsert.length) {
+        throw new Error('Lead import verification failed: persisted lead scope or telecaller assignment does not match the request.');
+      }
+
+      if (tc) {
+        const { data: persistedAssignments, error: assignmentVerificationError } = await this.client
+          .from('lead_assignments')
+          .select('lead_id, organization_id, assigned_to, assignment_type')
+          .eq('organization_id', orgId)
+          .eq('assigned_to', tc.id)
+          .in('lead_id', leadIds);
+        if (assignmentVerificationError) throw repositoryError('Lead assignment verification failed', assignmentVerificationError);
+        const validAssignments = new Set(
+          (persistedAssignments || [])
+            .filter((assignment) => assignment.organization_id === orgId && assignment.assignment_type === 'ASSIGNED')
+            .map((assignment) => assignment.lead_id)
+        );
+        if (validAssignments.size !== leadRowsToInsert.length) {
+          throw new Error('Lead import verification failed: assignment audit rows do not match imported leads.');
+        }
       }
     }
 
-    return { importedCount, failedCount, leads: importedLeads };
+    return {
+      importedCount,
+      failedCount,
+      assignedCount: tc ? importedCount : 0,
+      assignedTelecallerId: tc?.id || null,
+      leads: importedLeads,
+    };
   }
 
   // --- ATOMIC LEAD ASSIGNMENT (RPC - FAILS CLOSED) ---

@@ -482,6 +482,8 @@ class ApiClient {
   ): Promise<{
     importedCount: number;
     failedCount: number;
+    assignedCount: number;
+    assignedTelecallerId: string | null;
     leads: Lead[];
     message: string;
   }> {

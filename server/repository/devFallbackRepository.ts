@@ -762,7 +762,7 @@ export class DevFallbackRepository {
     assignedTelecallerId?: string | null,
     adminUser?: User,
     defaultBrand?: BusinessBrand
-  ): Promise<{ importedCount: number; failedCount: number; leads: Lead[]; message: string }> {
+  ): Promise<{ importedCount: number; failedCount: number; assignedCount: number; assignedTelecallerId: string | null; leads: Lead[]; message: string }> {
     this.ensureLoaded();
     const orgId = this.getOrganizationId(adminUser);
     assertManagement(adminUser!);
@@ -847,6 +847,8 @@ export class DevFallbackRepository {
     return {
       importedCount,
       failedCount,
+      assignedCount: assignedTc ? importedCount : 0,
+      assignedTelecallerId: assignedTc?.id || null,
       leads: newLeads,
       message: `Successfully imported ${importedCount} leads${failedCount > 0 ? ` (${failedCount} skipped due to missing name/phone)` : ''}.`,
     };

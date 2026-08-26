@@ -222,6 +222,8 @@ adminRouter.post('/leads/import', validateRequest(importLeadsSchema), async (req
       message: `Successfully imported ${result.importedCount} leads (${result.failedCount} invalid rows skipped).`,
       importedCount: result.importedCount,
       failedCount: result.failedCount,
+      assignedCount: result.assignedCount,
+      assignedTelecallerId: result.assignedTelecallerId,
       leads: result.leads,
     });
   } catch (err: any) {

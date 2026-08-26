@@ -42,13 +42,13 @@ export default function App() {
   const fetchData = useCallback(async () => {
     try {
       const user = api.getCurrentUser();
-      setLeads([]);
-      setAllTelecallers([]);
       setCurrentUser(user);
 
       if (!user) {
+        setLeads([]);
+        setAllTelecallers([]);
         setIsLoadingInitial(false);
-        return;
+        return false;
       }
 
       if (user.role !== 'TELECALLER') {
@@ -63,8 +63,10 @@ export default function App() {
         setLeads(myLeads);
         setAllTelecallers([]);
       }
+      return true;
     } catch (err) {
       console.error('Failed to load CRM data:', err);
+      return false;
     } finally {
       setIsLoadingInitial(false);
     }
