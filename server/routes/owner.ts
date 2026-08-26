@@ -16,5 +16,5 @@ ownerRouter.patch('/hr/:id', validateRequest(updateHrSchema), async (req: Authen
   try { res.json({ hr: await db.updateHr(req.params.id, req.body, req.user!) }); } catch (error: any) { res.status(400).json({ error: error.message }); }
 });
 ownerRouter.post('/hr/:id/reset-password', validateRequest(resetPasswordSchema), async (req: AuthenticatedRequest, res: Response) => {
-  try { res.json(await db.resetHrPassword(req.params.id, req.body.password, req.user!)); } catch (error: any) { res.status(400).json({ error: error.message }); }
+  try { res.json({ message: 'Password updated successfully.', user: await db.resetHrPassword(req.params.id, req.body.password, req.user!) }); } catch (error: any) { res.status(400).json({ error: error.message }); }
 });

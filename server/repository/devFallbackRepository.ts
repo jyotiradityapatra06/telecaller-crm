@@ -466,35 +466,25 @@ export class DevFallbackRepository {
     Object.assign(user, updates, { updatedAt: new Date().toISOString() }); this.persistToDisk(); const { passwordHash: _, ...safe } = user; return safe;
   }
 
-  public async resetHrPassword(id: string, password: string | undefined, owner: User): Promise<{ user: User; temporaryPassword: string }> {
+  public async resetHrPassword(id: string, password: string, owner: User): Promise<User> {
     this.ensureLoaded(); if (owner.role !== 'OWNER') throw new Error('Forbidden: Owner authorization required.');
     const user = this.users.find((u) => u.id === id && u.organizationId === owner.organizationId && u.role === 'HR');
     if (!user) throw new Error('HR account not found.');
-    const temporaryPassword = password || this.generateTemporaryPassword(); user.passwordHash = bcrypt.hashSync(temporaryPassword, 10); this.persistToDisk(); const { passwordHash: _, ...safe } = user; return { user: safe, temporaryPassword };
-  }
-
-  private generateTemporaryPassword(): string {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let code = '';
-    for (let i = 0; i < 4; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    const num = Math.floor(1000 + Math.random() * 9000);
-    return `Pass-${code}-${num}`;
+    user.passwordHash = bcrypt.hashSync(password.trim(), 10); this.persistToDisk(); const { passwordHash: _, ...safe } = user; return safe;
   }
 
   public async createTelecaller(
     data: {
       name: string;
       loginId?: string;
-      password?: string;
+      password: string;
       brandAccess: BrandAccess;
       phone?: string;
       email?: string;
       dailyTarget?: number;
     },
     adminUser?: User
-  ): Promise<{ user: User; temporaryPassword?: string }> {
+  ): Promise<{ user: User }> {
     this.ensureLoaded();
     const orgId = this.getOrganizationId(adminUser);
     assertManagement(adminUser!);
@@ -511,7 +501,7 @@ export class DevFallbackRepository {
       throw new Error(`Login ID "${finalLoginId}" already exists. Please choose a unique Login ID.`);
     }
 
-    const plainPassword = data.password?.trim() || this.generateTemporaryPassword();
+    const plainPassword = data.password.trim();
     const salt = bcrypt.genSaltSync(10);
     const passwordHash = bcrypt.hashSync(plainPassword, salt);
     const now = new Date().toISOString();
@@ -536,10 +526,7 @@ export class DevFallbackRepository {
     this.persistToDisk();
 
     const { passwordHash: _, ...safeUser } = newUser;
-    return {
-      user: safeUser,
-      temporaryPassword: plainPassword,
-    };
+    return { user: safeUser };
   }
 
   public async updateTelecaller(
@@ -609,8 +596,9 @@ export class DevFallbackRepository {
 
   public async resetTelecallerPassword(
     id: string,
+    password: string,
     adminUser?: User
-  ): Promise<{ user: User; temporaryPassword: string }> {
+  ): Promise<User> {
     this.ensureLoaded();
     const orgId = this.getOrganizationId(adminUser);
     const user = this.users.find((u) => u.id === id && u.organizationId === orgId);
@@ -623,9 +611,8 @@ export class DevFallbackRepository {
     }
     assertCanManageTelecaller(adminUser!, user);
 
-    const plainPassword = this.generateTemporaryPassword();
     const salt = bcrypt.genSaltSync(10);
-    user.passwordHash = bcrypt.hashSync(plainPassword, salt);
+    user.passwordHash = bcrypt.hashSync(password.trim(), salt);
     user.updatedAt = new Date().toISOString();
 
     const adminName = adminUser?.name || 'Master Admin';
@@ -646,10 +633,7 @@ export class DevFallbackRepository {
     this.persistToDisk();
 
     const { passwordHash: _, ...safeUser } = user;
-    return {
-      user: safeUser,
-      temporaryPassword: plainPassword,
-    };
+    return safeUser;
   }
 
   public async updateUserPassword(userId: string, newHash: string, userContext?: User): Promise<void> {

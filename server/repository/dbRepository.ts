@@ -320,16 +320,15 @@ export class DbRepository {
     return safe;
   }
 
-  public async resetHrPassword(id: string, password: string | undefined, owner: User): Promise<{ user: User; temporaryPassword: string }> {
+  public async resetHrPassword(id: string, password: string, owner: User): Promise<User> {
     if (this.useFallback) return this.fallbackRepo.resetHrPassword(id, password, owner);
     if (owner.role !== 'OWNER') throw new Error('Forbidden: Owner authorization required.');
     const existing = await this.findUserById(id, owner);
     if (!existing || existing.role !== 'HR') throw new Error('HR account not found.');
-    const temporaryPassword = password?.trim() || this.generateTemporaryPassword();
-    const { data, error } = await this.client.from('users').update({ password_hash: bcrypt.hashSync(temporaryPassword, 10), updated_at: new Date().toISOString() }).eq('organization_id', this.getOrganizationId(owner)).eq('id', id).eq('role', 'HR').select().single();
+    const { data, error } = await this.client.from('users').update({ password_hash: bcrypt.hashSync(password.trim(), 10), updated_at: new Date().toISOString() }).eq('organization_id', this.getOrganizationId(owner)).eq('id', id).eq('role', 'HR').select().single();
     if (error || !data) throw new Error('Failed to reset HR password.');
     const { passwordHash: _, ...user } = mapUserFromRow(data);
-    return { user, temporaryPassword };
+    return user;
   }
 
   private async generateNextLoginId(brandAccess: BrandAccess, adminUser: User): Promise<string> {
@@ -356,28 +355,18 @@ export class DbRepository {
     return `${prefix}_${formatted}`;
   }
 
-  private generateTemporaryPassword(): string {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let code = '';
-    for (let i = 0; i < 4; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    const num = Math.floor(1000 + Math.random() * 9000);
-    return `Pass-${code}-${num}`;
-  }
-
   public async createTelecaller(
     data: {
       name: string;
       loginId?: string;
-      password?: string;
+      password: string;
       brandAccess: BrandAccess;
       phone?: string;
       email?: string;
       dailyTarget?: number;
     },
     adminUser: User
-  ): Promise<{ user: User; temporaryPassword?: string }> {
+  ): Promise<{ user: User }> {
     if (this.useFallback) return this.fallbackRepo.createTelecaller(data, adminUser);
     if (!adminUser) {
       throw new Error('Unauthorized: Admin user context required to create telecaller.');
@@ -397,7 +386,7 @@ export class DbRepository {
       throw new Error(`Telecaller ID "${finalLoginId}" already exists. Please choose a unique ID.`);
     }
 
-    const plainPassword = data.password?.trim() || this.generateTemporaryPassword();
+    const plainPassword = data.password.trim();
     const salt = bcrypt.genSaltSync(10);
     const passwordHash = bcrypt.hashSync(plainPassword, salt);
     const now = new Date().toISOString();
@@ -428,10 +417,7 @@ export class DbRepository {
     }
 
     const { passwordHash: _, ...safeUser } = newUser;
-    return {
-      user: safeUser,
-      temporaryPassword: plainPassword,
-    };
+    return { user: safeUser };
   }
 
   public async updateTelecaller(
@@ -496,9 +482,10 @@ export class DbRepository {
 
   public async resetTelecallerPassword(
     id: string,
+    password: string,
     adminUser: User
-  ): Promise<{ user: User; temporaryPassword: string }> {
-    if (this.useFallback) return this.fallbackRepo.resetTelecallerPassword(id, adminUser);
+  ): Promise<User> {
+    if (this.useFallback) return this.fallbackRepo.resetTelecallerPassword(id, password, adminUser);
     if (!adminUser) {
       throw new Error('Unauthorized: Admin user context required to reset telecaller password.');
     }
@@ -521,9 +508,8 @@ export class DbRepository {
     }
     assertCanManageTelecaller(adminUser, mapUserFromRow(user));
 
-    const plainPassword = this.generateTemporaryPassword();
     const salt = bcrypt.genSaltSync(10);
-    const passwordHash = bcrypt.hashSync(plainPassword, salt);
+    const passwordHash = bcrypt.hashSync(password.trim(), salt);
     const now = new Date().toISOString();
 
     const { data: updated, error: updateErr } = await this.client
@@ -543,10 +529,7 @@ export class DbRepository {
 
     const safeUser = mapUserFromRow(updated);
     const { passwordHash: _, ...sanitized } = safeUser;
-    return {
-      user: sanitized,
-      temporaryPassword: plainPassword,
-    };
+    return sanitized;
   }
 
   public async updateUserPassword(userId: string, newHash: string, userContext: User): Promise<void> {

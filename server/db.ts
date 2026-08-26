@@ -49,7 +49,7 @@ class DatabaseAdapter {
   public getHrs(user: any) { return dbRepository.getHrs(user); }
   public createHr(data: any, user: any) { return dbRepository.createHr(data, user); }
   public updateHr(id: string, data: any, user: any) { return dbRepository.updateHr(id, data, user); }
-  public resetHrPassword(id: string, password: string | undefined, user: any) { return dbRepository.resetHrPassword(id, password, user); }
+  public resetHrPassword(id: string, password: string, user: any) { return dbRepository.resetHrPassword(id, password, user); }
 
   public createTelecaller(data: any, adminUser?: any) {
     return dbRepository.createTelecaller(data, adminUser);
@@ -63,8 +63,8 @@ class DatabaseAdapter {
     return dbRepository.deleteTelecaller(id, adminUser);
   }
 
-  public resetTelecallerPassword(id: string, adminUser?: any) {
-    return dbRepository.resetTelecallerPassword(id, adminUser);
+  public resetTelecallerPassword(id: string, password: string, adminUser?: any) {
+    return dbRepository.resetTelecallerPassword(id, password, adminUser);
   }
 
   public updateUserPassword(userId: string, newHash: string, userContext?: any) {

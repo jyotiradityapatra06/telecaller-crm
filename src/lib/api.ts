@@ -313,7 +313,7 @@ class ApiClient {
     return this.request(`/api/owner/hr/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) });
   }
 
-  public resetHrPassword(id: string, password?: string): Promise<{ user: AuthUser; temporaryPassword: string }> {
+  public resetHrPassword(id: string, password: string): Promise<{ message: string; user: AuthUser }> {
     return this.request(`/api/owner/hr/${encodeURIComponent(id)}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) });
   }
 
@@ -339,7 +339,7 @@ class ApiClient {
   public async createTelecaller(payload: {
     name: string;
     loginId?: string;
-    password?: string;
+    password: string;
     brandAccess: BrandAccess;
     phone?: string;
     email?: string;
@@ -347,12 +347,6 @@ class ApiClient {
   }): Promise<{
     message: string;
     telecaller: AuthUser;
-    credentials?: {
-      name: string;
-      loginId: string;
-      temporaryPassword: string;
-      brandAccess: BrandAccess;
-    };
   }> {
     return this.request('/api/admin/telecallers', {
       method: 'POST',
@@ -399,16 +393,17 @@ class ApiClient {
   }
 
   public async resetTelecallerPassword(
-    id: string
+    id: string,
+    password: string
   ): Promise<{
     message: string;
     user: AuthUser;
-    temporaryPassword: string;
   }> {
     return this.request(
       `/api/admin/telecallers/${encodeURIComponent(id)}/reset-password`,
       {
         method: 'POST',
+        body: JSON.stringify({ password }),
       }
     );
   }

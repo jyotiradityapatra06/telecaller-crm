@@ -61,7 +61,7 @@ export const changePasswordSchema = z.object({
 export const createTelecallerSchema = z.object({
   name: z.string().min(1, 'Name is required').max(255),
   loginId: z.string().max(100).optional(),
-  password: z.string().min(4, 'Password must be at least 4 characters').max(255).optional(),
+  password: z.string().min(8, 'Password must be at least 8 characters').max(255),
   brandAccess: z.enum(['APNI_VIDYA', 'APNI_ESTATE']),
   phone: z.string().max(50).optional(),
   email: z.string().max(255).optional(),
@@ -169,7 +169,7 @@ export const updateHrSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-export const resetPasswordSchema = z.object({ password: z.string().min(8).max(255).optional() });
+export const resetPasswordSchema = z.object({ password: z.string().min(8, 'Password must be at least 8 characters').max(255) });
 
 // 4. Telecaller Action Schemas
 export const recordCallSchema = z.object({

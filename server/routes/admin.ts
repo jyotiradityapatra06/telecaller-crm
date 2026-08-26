@@ -10,6 +10,7 @@ import {
   importLeadsSchema,
   assignLeadsSchema,
   autoDistributeSchema,
+  resetPasswordSchema,
 } from '../middleware/validate';
 
 export const adminRouter = Router();
@@ -44,7 +45,7 @@ adminRouter.post('/telecallers', validateRequest(createTelecallerSchema), async 
   const { name, loginId, password, brandAccess, phone, email, dailyTarget } = req.body;
 
   try {
-    const result: any = await db.createTelecaller({
+    const result = await db.createTelecaller({
       name,
       loginId,
       password,
@@ -54,20 +55,11 @@ adminRouter.post('/telecallers', validateRequest(createTelecallerSchema), async 
       dailyTarget: Number(dailyTarget) || 50,
     }, req.user);
 
-    const safeUser = result.user || result;
-    const tempPassword = result.temporaryPassword;
+    const safeUser = result.user;
 
     res.status(201).json({
       message: `Telecaller ${safeUser.name} (${safeUser.loginId}) [${safeUser.brandAccess}] created successfully`,
       telecaller: safeUser,
-      credentials: tempPassword
-        ? {
-            name: safeUser.name,
-            loginId: safeUser.loginId,
-            temporaryPassword: tempPassword,
-            brandAccess: safeUser.brandAccess,
-          }
-        : undefined,
     });
   } catch (err: any) {
     res.status(400).json({ error: err.message || 'Failed to create telecaller' });
@@ -106,15 +98,14 @@ adminRouter.delete('/telecallers/:id', async (req: AuthenticatedRequest, res: Re
 });
 
 // POST /api/admin/telecallers/:id/reset-password
-adminRouter.post('/telecallers/:id/reset-password', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+adminRouter.post('/telecallers/:id/reset-password', validateRequest(resetPasswordSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
   try {
-    const result = await db.resetTelecallerPassword(id, req.user);
+    const user = await db.resetTelecallerPassword(id, req.body.password, req.user);
     res.json({
-      message: 'Telecaller password reset successfully.',
-      user: result.user,
-      temporaryPassword: result.temporaryPassword,
+      message: 'Password updated successfully.',
+      user,
     });
   } catch (err: any) {
     const status = err.message?.includes('not found') ? 404 : 403;
